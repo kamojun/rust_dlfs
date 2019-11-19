@@ -20,6 +20,7 @@ mod tests {
 }
 
 pub mod functions;
+pub mod io;
 pub mod layers;
 pub mod model;
 pub mod train;
