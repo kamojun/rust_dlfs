@@ -1,25 +1,79 @@
+use crate::io::*;
 use crate::layers::*;
 use crate::model::*;
+use crate::optimizer::{Optimizer, SGD};
 use crate::types::*;
 use crate::util::*;
+extern crate ndarray;
+use ndarray::{Array, Axis, Slice};
 
-pub fn train(input_size: i32, hidden_size: i32) {
+pub fn train() {
+    const INPUT_DIM: usize = 2;
+    const TARGET_SIZE: usize = 3;
     let hidden_size = 10;
     let batch_size = 30;
-    let max_epoch = 300;
+    let max_epoch = 2;
 
-    // let data, target = load_data();
-    let data: arr2d;
-    let target: arr1d;
+    let data = read_csv::<[f32; INPUT_DIM]>("./data/spiral/x.csv").expect("cannot read data csv");
+    let data = Array::from_shape_fn((data.len(), INPUT_DIM), |(i, j)| data[i][j]);
+    let target =
+        read_csv::<[f32; TARGET_SIZE]>("./data/spiral/t.csv").expect("cannot read target csv");
+    let target = Array::from_shape_fn((target.len(), TARGET_SIZE), |(i, j)| target[i][j]);
+    let data_len = data.shape()[0];
+    assert_eq!(data_len, target.shape()[0]);
 
-    let model = TwoLayerNet::new(2, hidden_size, 3);
-    // let optimizer
+    let mut model = TwoLayerNet::new(2, hidden_size, 3);
+    let optimizer = SGD { lr: 0.01 };
 
-    // let data_size = data.len();
-    // let max_iters = data_size / batch_size;
-    // let total_loss: f32 = 0.0;
-    // let loss_count: f32 = 0.0;
-    // let loss_list = Vec::<f32>::new();
+    let data_size = data.len();
+    let max_iters = data_size / batch_size;
+    let mut loss_list = Vec::<f32>::new();
 
-    for epoch in (1..max_epoch) {}
+    for epoch in 1..=max_epoch {
+        let idx = random_index(data_len);
+        for iters in 1..=max_iters {
+            let mut total_loss: f32 = 0.0;
+            let mut loss_count: i32 = 0;
+            let batch_idx = &idx[(iters - 1) * batch_size..iters * batch_size];
+            let batch_data =
+                Array::from_shape_fn((batch_size, INPUT_DIM), |(i, j)| data[[batch_idx[i], j]]);
+            let batch_target = Array::from_shape_fn((batch_size, TARGET_SIZE), |(i, j)| {
+                target[[batch_idx[i], j]]
+            });
+            // let batch_target = ...;
+            let loss = model.forward(batch_data, &batch_target);
+            // data.slice_axis(Axis(0), batch_idx);
+            model.backward(batch_size);
+            // moedl.params1dArr1del.grads1dは片方が&mut self, もう片方が&selfでArr1d
+            // 実際はselfの中の別々のもArr2dスしているので、問題はないはずだが、Arr2d
+            // コンパイラとしてはそれらのselfの同一フィールドにアクセスしている可能性がある
+            // つまり結局同一のフィール度に参照と可変参照の両方でアクセスする可能性があるので
+            // エラーとしているのか...。
+            // optimizer.update1d(model.params1d(), model.grads1d());
+            //
+            let grads1d: Vec<Arr1d> = model.grads1d().into_iter().map(Arr1d::clone).collect();
+            let grads2d: Vec<Arr2d> = model.grads2d().into_iter().map(Arr2d::clone).collect();
+            optimizer.update1d(model.params1d(), grads1d);
+            optimizer.update2d(model.params2d(), grads2d);
+            total_loss += loss;
+            loss_count += 1;
+            if iters % 1 == 0 {
+                let avg_loss = total_loss / loss_count as f32;
+                println!(
+                    "|epoch {}| iter {}/{} | loss {}",
+                    epoch, iters, max_iters, avg_loss
+                );
+                loss_list.push(avg_loss);
+            }
+        }
+    }
+    println!("hello?");
+    println!("{:?}", data);
+    println!("{:?}", target);
+    println!("{:?}", loss_list);
+}
+
+#[test]
+fn test_train() {
+    train();
 }

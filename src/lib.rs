@@ -23,6 +23,7 @@ pub mod functions;
 pub mod io;
 pub mod layers;
 pub mod model;
+pub mod optimizer;
 pub mod train;
 pub mod types;
 pub mod util;

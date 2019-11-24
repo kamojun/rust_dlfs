@@ -1,5 +1,5 @@
 extern crate ndarray;
-use ndarray::{Array2, Array3, Axis};
+use ndarray::{Array, Array2, Array3, Axis};
 use std::collections::HashMap;
 
 pub fn preprocess(text: &str) -> (Vec<usize>, HashMap<String, usize>, HashMap<usize, String>) {
@@ -86,3 +86,22 @@ pub fn convert_one_hot_2(corpus: &Vec<Vec<usize>>, vocab_size: usize) -> Array3<
     }
     arr
 }
+
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+pub fn random_index(range: usize) -> Vec<usize> {
+    let mut vec: Vec<usize> = (0..range).collect();
+    vec.shuffle(&mut thread_rng());
+    vec
+}
+
+// ↓うまくいかない...。
+// 配列のジェネリック型として[T; N] (Nはusize)みたいなのができて然るべきだと思うのだが、できない。
+// (T, T)みたいなtuple使おうすとると、v[i][j]的なアクセスができない。
+// use std::ops::Index;
+// pub fn vec_to_array<T, U>(v: Vec<U>, n: usize) -> Array2<T>
+// where
+//     U: Index<T> + Sized,
+// {
+//     Array2::from_shape_fn((v.len(), n), |(i, j)| v[i][j]);
+// }

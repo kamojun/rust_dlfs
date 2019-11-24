@@ -3,7 +3,6 @@ use csv::ReaderBuilder;
 use serde::Deserialize;
 use std::error::Error;
 use std::io;
-use std::process;
 
 type Record = [f32; 2];
 

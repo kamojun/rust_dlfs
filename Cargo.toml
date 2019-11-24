@@ -12,4 +12,8 @@ ndarray = "0.13.0"
 ndarray-rand = "0.11.0"
 csv = "1.1"
 serde = "1.0.102"
+itertools = "0.8.1"
+ndarray-stats = "0.3"
 
+[lib]
+doctest = false
