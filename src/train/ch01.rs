@@ -10,9 +10,10 @@ use ndarray::{Array, Axis, Slice};
 pub fn train() {
     const INPUT_DIM: usize = 2;
     const TARGET_SIZE: usize = 3;
+    const PRINT_ITER_NUM: usize = 10;
     let hidden_size = 10;
     let batch_size = 30;
-    let max_epoch = 2;
+    let max_epoch = 300;
 
     let data = read_csv::<[f32; INPUT_DIM]>("./data/spiral/x.csv").expect("cannot read data csv");
     let data = Array::from_shape_fn((data.len(), INPUT_DIM), |(i, j)| data[i][j]);
@@ -23,10 +24,9 @@ pub fn train() {
     assert_eq!(data_len, target.shape()[0]);
 
     let mut model = TwoLayerNet::new(2, hidden_size, 3);
-    let optimizer = SGD { lr: 0.01 };
+    let optimizer = SGD { lr: 1.0 };
 
-    let data_size = data.len();
-    let max_iters = data_size / batch_size;
+    let max_iters = data_len / batch_size;
     let mut loss_list = Vec::<f32>::new();
 
     for epoch in 1..=max_epoch {
@@ -57,7 +57,7 @@ pub fn train() {
             optimizer.update2d(model.params2d(), grads2d);
             total_loss += loss;
             loss_count += 1;
-            if iters % 1 == 0 {
+            if iters % PRINT_ITER_NUM == 0 {
                 let avg_loss = total_loss / loss_count as f32;
                 println!(
                     "|epoch {}| iter {}/{} | loss {}",

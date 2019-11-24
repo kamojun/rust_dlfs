@@ -18,8 +18,9 @@ pub fn cross_entropy_error(pred: &Arr2d, one_hot_target: &Arr2d) -> Arr1d {
 
 pub fn softmax(input: Arr2d) -> Arr2d {
     // input - input.max(Axis(1))
+    let input = input.mapv(|x| x.exp());
     let sum = input.sum_axis(Axis(1));
-    input.mapv(|x| x.exp()) / sum
+    input / sum.insert_axis(Axis(1))
 }
 
 pub fn cross_entropy_error_target(pred: &Arr2d, target: &Array1<usize>) -> f32 {

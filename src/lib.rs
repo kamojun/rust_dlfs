@@ -11,12 +11,6 @@ mod tests {
             contexts, corpus, target
         );
     }
-    #[test]
-    fn mytest() {
-        use ndarray::*;
-        use std::iter::FromIterator;
-        Array1::from_iter(0..6).into_shape((2, 2));
-    }
 }
 
 pub mod functions;

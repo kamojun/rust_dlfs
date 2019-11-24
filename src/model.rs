@@ -47,7 +47,7 @@ impl TwoLayerNet {
     }
     pub fn backward(&mut self, batch_size: usize) -> Arr2d {
         let mut dx = self.loss_layer.backward(batch_size);
-        for layer in self.layers.iter_mut() {
+        for layer in self.layers.iter_mut().rev() {
             dx = layer.backward(dx);
         }
         dx

@@ -35,19 +35,19 @@ impl Sigmoid {
     }
 }
 pub struct Affine {
-    W: Arr2d,
+    w: Arr2d,
     b: Arr1d,
     x: Arr2d,
-    dW: Arr2d,
+    dw: Arr2d,
     db: Arr1d,
 }
 impl Affine {
-    pub fn new(W: Arr2d, b: Arr1d) -> Self {
+    pub fn new(w: Arr2d, b: Arr1d) -> Self {
         Self {
-            W,
+            w,
             b,
             x: Array::zeros((0, 0)),
-            dW: Array::zeros((0, 0)),
+            dw: Array::zeros((0, 0)),
             db: Array::zeros((0,)),
         }
     }
@@ -75,25 +75,25 @@ impl Layer for Sigmoid {
 impl Layer for Affine {
     fn forward(&mut self, input: Arr2d) -> Arr2d {
         self.x = input;
-        self.x.dot(&self.W) + &(self.b) // dotは自動的に参照渡し?
+        self.x.dot(&self.w) + &(self.b) // dotは自動的に参照渡し?
     }
     fn backward(&mut self, dout: Arr2d) -> Arr2d {
-        // let dx = dout.dot(&self.W.t());
-        self.dW = self.x.t().dot(&dout);
+        // let dx = dout.dot(&self.w.t());
+        self.dw = self.x.t().dot(&dout);
         self.db = dout.sum_axis(Axis(0));
-        dout.dot(&self.W.t())
+        dout.dot(&self.w.t())
     }
     fn params1d(&mut self) -> Vec<&mut Arr1d> {
         vec![&mut self.b]
     }
     fn params2d(&mut self) -> Vec<&mut Arr2d> {
-        vec![&mut self.W]
+        vec![&mut self.w]
     }
     fn grads1d(&self) -> Vec<&Arr1d> {
         vec![&self.db]
     }
     fn grads2d(&self) -> Vec<&Arr2d> {
-        vec![&self.dW]
+        vec![&self.dw]
     }
 }
 impl Layer for SoftMax {
