@@ -1,11 +1,42 @@
 use crate::io::*;
-use crate::layers::*;
 use crate::model::*;
-use crate::optimizer::{Optimizer, SGD};
+use crate::optimizer::{AdaGrad, Optimizer, SGD};
+use crate::trainer::*;
 use crate::types::*;
 use crate::util::*;
 extern crate ndarray;
 use ndarray::{Array, Axis, Slice};
+
+pub fn train2() {
+    const INPUT_DIM: usize = 2;
+    const TARGET_SIZE: usize = 3;
+    const PRINT_ITER_NUM: usize = 10;
+    const HIDDEN_SIZE: usize = 10;
+    const BATCH_SIZE: usize = 30;
+    const MAX_EPOCH: usize = 300;
+
+    let data = read_csv::<[f32; INPUT_DIM]>("./data/spiral/x.csv").expect("cannot read data csv");
+    let data = Array::from_shape_fn((data.len(), INPUT_DIM), |(i, j)| data[i][j]);
+    let target =
+        read_csv::<[f32; TARGET_SIZE]>("./data/spiral/t.csv").expect("cannot read target csv");
+    let target = Array::from_shape_fn((target.len(), TARGET_SIZE), |(i, j)| target[i][j]);
+    let data_len = data.shape()[0];
+    assert_eq!(data_len, target.shape()[0]);
+
+    let mut model = TwoLayerNet::new(2, HIDDEN_SIZE, 3);
+    // let mut optimizer = SGD { lr: 1.0 };
+    let mut optimizer = AdaGrad::new(1.0);
+    let mut trainer = Trainer::new(model, optimizer);
+    trainer.fit(
+        data,
+        target,
+        MAX_EPOCH,
+        BATCH_SIZE,
+        None,
+        Some(PRINT_ITER_NUM),
+    );
+    trainer.show_loss();
+}
 
 pub fn train() {
     const INPUT_DIM: usize = 2;
@@ -24,16 +55,18 @@ pub fn train() {
     assert_eq!(data_len, target.shape()[0]);
 
     let mut model = TwoLayerNet::new(2, hidden_size, 3);
-    let optimizer = SGD { lr: 1.0 };
+    // let mut optimizer = SGD { lr: 1.0 };
+    let mut optimizer = AdaGrad::new(1.0);
 
     let max_iters = data_len / batch_size;
     let mut loss_list = Vec::<f32>::new();
 
     for epoch in 1..=max_epoch {
         let idx = random_index(data_len);
+        //　一定回数イテレーションするたびに平均の損失を記録する
+        let mut total_loss: f32 = 0.0;
+        let mut loss_count: i32 = 0;
         for iters in 1..=max_iters {
-            let mut total_loss: f32 = 0.0;
-            let mut loss_count: i32 = 0;
             let batch_idx = &idx[(iters - 1) * batch_size..iters * batch_size];
             let batch_data =
                 Array::from_shape_fn((batch_size, INPUT_DIM), |(i, j)| data[[batch_idx[i], j]]);
@@ -51,12 +84,14 @@ pub fn train() {
             // エラーとしているのか...。
             // optimizer.update1d(model.params1d(), model.grads1d());
             //
-            let grads1d: Vec<Arr1d> = model.grads1d().into_iter().map(Arr1d::clone).collect();
-            let grads2d: Vec<Arr2d> = model.grads2d().into_iter().map(Arr2d::clone).collect();
-            optimizer.update1d(model.params1d(), grads1d);
-            optimizer.update2d(model.params2d(), grads2d);
-            total_loss += loss;
-            loss_count += 1;
+            // let grads1d: Vec<Arr1d> = model.grads1d().into_iter().map(Arr1d::clone).collect();
+            // let grads2d: Vec<Arr2d> = model.grads2d().into_iter().map(Arr2d::clone).collect();
+            // optimizer.update1d(model.params1d(), grads1d);
+            // // optimizer.update2d(model.params2d(), grads2d);
+            // optimizer.update1d(model.params1d(), model.grads1d());
+            // optimizer.update2d(model.params2d(), model.grads2d());
+            total_loss += loss; // 1バッチごとに損失を加算していく
+            loss_count += 1; // バッチ回数を記録
             if iters % PRINT_ITER_NUM == 0 {
                 let avg_loss = total_loss / loss_count as f32;
                 println!(
@@ -64,6 +99,8 @@ pub fn train() {
                     epoch, iters, max_iters, avg_loss
                 );
                 loss_list.push(avg_loss);
+                total_loss = 0.0;
+                loss_count = 0;
             }
         }
     }
@@ -75,5 +112,5 @@ pub fn train() {
 
 #[test]
 fn test_train() {
-    train();
+    train2();
 }

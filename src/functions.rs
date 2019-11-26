@@ -1,7 +1,7 @@
 use super::types::{Arr1d, Arr2d};
-use ndarray::{Array, Array1, Axis, Zip};
+use ndarray::{Array, Array1, Axis};
 extern crate ndarray_stats;
-use ndarray_stats::SummaryStatisticsExt;
+// use ndarray_stats::SummaryStatisticsExt;
 
 pub fn reverse_one_hot(one_hot_target: &Arr2d) -> Array1<usize> {
     one_hot_target.map_axis(Axis(1), |v| {

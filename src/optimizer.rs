@@ -1,17 +1,28 @@
 extern crate ndarray;
 use super::types::{Arr1d, Arr2d};
-use ndarray::{arr1, Array1};
+use ndarray::{arr1, Array, Array1};
 
 pub trait Optimizer {
     // fn update<'a, T: Math<'a>>(&self, mut params: Vec<&mut T>, grad: Vec<&'a T>) {}
-    fn update1d(&self, mut params: Vec<&mut Arr1d>, grad: Vec<Arr1d>) {}
-    fn update2d(&self, mut params: Vec<&mut Arr2d>, grad: Vec<Arr2d>) {}
+    fn update1d(&mut self, mut params: Vec<&mut Arr1d>, grad: Vec<Arr1d>) {}
+    fn update2d(&mut self, mut params: Vec<&mut Arr2d>, grad: Vec<Arr2d>) {}
 }
 
 pub struct SGD {
     pub lr: f32,
 }
-
+impl Optimizer for SGD {
+    fn update1d(&mut self, mut params: Vec<&mut Arr1d>, grad: Vec<Arr1d>) {
+        for i in 0..params.len() {
+            *params[i] -= &(&grad[i] * self.lr);
+        }
+    }
+    fn update2d(&mut self, mut params: Vec<&mut Arr2d>, grad: Vec<Arr2d>) {
+        for i in 0..params.len() {
+            *params[i] -= &(&grad[i] * self.lr);
+        }
+    }
+}
 // impl SGD {
 // arr1d, arr2dのそれぞれに対して呼び出せば良い。
 // Math traitをどう設定するかが問題
@@ -23,15 +34,38 @@ pub struct SGD {
 //         }
 //     }
 // }
-impl Optimizer for SGD {
-    fn update1d(&self, mut params: Vec<&mut Arr1d>, grad: Vec<Arr1d>) {
-        for i in 0..params.len() {
-            *params[i] -= &(&grad[i] * self.lr);
+
+pub struct AdaGrad {
+    lr: f32,
+    h1d: Vec<Arr1d>,
+    h2d: Vec<Arr2d>,
+}
+impl AdaGrad {
+    pub fn new(lr: f32) -> Self {
+        AdaGrad {
+            lr,
+            h1d: Vec::new(),
+            h2d: Vec::new(),
         }
     }
-    fn update2d(&self, mut params: Vec<&mut Arr2d>, grad: Vec<Arr2d>) {
+}
+impl Optimizer for AdaGrad {
+    fn update1d(&mut self, mut params: Vec<&mut Arr1d>, grad: Vec<Arr1d>) {
+        if self.h1d.len() == 0 {
+            self.h1d = grad.iter().map(|g| Array::zeros(g.dim())).collect();
+        }
         for i in 0..params.len() {
-            *params[i] -= &(&grad[i] * self.lr);
+            self.h1d[i] += &(&grad[i] * &grad[i]);
+            *params[i] -= &(&grad[i] * self.lr / (self.h1d[i].mapv(f32::sqrt) + 1e-7));
+        }
+    }
+    fn update2d(&mut self, mut params: Vec<&mut Arr2d>, grad: Vec<Arr2d>) {
+        if self.h2d.len() == 0 {
+            self.h2d = grad.iter().map(|g| Array::zeros(g.dim())).collect();
+        }
+        for i in 0..params.len() {
+            self.h2d[i] += &(&grad[i] * &grad[i]);
+            *params[i] -= &(&grad[i] * self.lr / (self.h2d[i].mapv(f32::sqrt) + 1e-7));
         }
     }
 }

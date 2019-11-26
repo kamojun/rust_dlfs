@@ -1,5 +1,5 @@
 extern crate ndarray;
-use ndarray::{Array, Array2, Array3, Axis};
+use ndarray::{Array2, Array3, Axis};
 use std::collections::HashMap;
 
 pub fn preprocess(text: &str) -> (Vec<usize>, HashMap<String, usize>, HashMap<usize, String>) {

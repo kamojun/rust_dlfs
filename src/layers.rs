@@ -13,13 +13,13 @@ pub trait Layer {
     fn params1d(&mut self) -> Vec<&mut Arr1d> {
         Vec::new()
     }
-    fn grads1d(&self) -> Vec<&Arr1d> {
+    fn grads1d(&self) -> Vec<Arr1d> {
         Vec::new()
     }
     fn params2d(&mut self) -> Vec<&mut Arr2d> {
         Vec::new()
     }
-    fn grads2d(&self) -> Vec<&Arr2d> {
+    fn grads2d(&self) -> Vec<Arr2d> {
         Vec::new()
     }
 }
@@ -89,11 +89,11 @@ impl Layer for Affine {
     fn params2d(&mut self) -> Vec<&mut Arr2d> {
         vec![&mut self.w]
     }
-    fn grads1d(&self) -> Vec<&Arr1d> {
-        vec![&self.db]
+    fn grads1d(&self) -> Vec<Arr1d> {
+        vec![self.db.clone()]
     }
-    fn grads2d(&self) -> Vec<&Arr2d> {
-        vec![&self.dw]
+    fn grads2d(&self) -> Vec<Arr2d> {
+        vec![self.dw.clone()]
     }
 }
 impl Layer for SoftMax {
@@ -108,6 +108,7 @@ impl Layer for SoftMax {
 }
 
 pub trait LayerWithLoss {
+    fn predict(&self, input: Arr2d) -> Arr2d;
     /// (バッチ次元、入力次元)の入力inputに対し、(バッチ次元、出力次元)を返す。
     fn forward(&mut self, input: Arr2d, one_hot_target: &Arr2d) -> f32;
     /// (バッチ次元、出力次元)で伝播してきた誤差doutに対し、(バッチ次元、入力次元)
@@ -131,8 +132,11 @@ impl SoftMaxWithLoss {
     }
 }
 impl LayerWithLoss for SoftMaxWithLoss {
+    fn predict(&self, input: Arr2d) -> Arr2d {
+        softmax(input)
+    }
     fn forward(&mut self, input: Arr2d, one_hot_target: &Arr2d) -> f32 {
-        self.pred = softmax(input);
+        self.pred = self.predict(input);
         self.target = reverse_one_hot(one_hot_target);
         // self.out = cross_entropy_error_target(&self.pred, &self.target);
         // self.out.clone()
@@ -143,7 +147,7 @@ impl LayerWithLoss for SoftMaxWithLoss {
         let dout: Arr2d = Array::from_elem((batch_size, 1), 1.0 / batch_size as f32);
         let mut dx = self.pred.clone(); // これを使う
         for (i, t) in self.target.iter().enumerate() {
-            dx[[i, *t]] -= 1.0; // 誤差
+            dx[[i, *t]] -= 1.0; // 誤差(正解ラベルでの確率は1なのでそれを引く)
         }
         // dx * dout / batch_size
         dx * dout // doutはバッチ次元なので、(バッチサイズ, 1)にしてdxとかけれるようにする。
