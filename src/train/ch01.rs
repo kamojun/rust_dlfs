@@ -8,20 +8,17 @@ extern crate ndarray;
 use ndarray::{Array, Axis, Slice};
 
 pub fn train2() {
-    const INPUT_DIM: usize = 2;
-    const TARGET_SIZE: usize = 3;
     const PRINT_ITER_NUM: usize = 10;
     const HIDDEN_SIZE: usize = 10;
     const BATCH_SIZE: usize = 30;
     const MAX_EPOCH: usize = 300;
 
-    let data = read_csv::<[f32; INPUT_DIM]>("./data/spiral/x.csv").expect("cannot read data csv");
-    let data = Array::from_shape_fn((data.len(), INPUT_DIM), |(i, j)| data[i][j]);
-    let target =
-        read_csv::<[f32; TARGET_SIZE]>("./data/spiral/t.csv").expect("cannot read target csv");
-    let target = Array::from_shape_fn((target.len(), TARGET_SIZE), |(i, j)| target[i][j]);
+    let data = csv_to_array("./data/spiral/x.csv").expect("cannot read data csv");
+    let target = csv_to_array("./data/spiral/t.csv").expect("cannot read target csv");
     let data_len = data.shape()[0];
     assert_eq!(data_len, target.shape()[0]);
+    println!("{:?}", target);
+    println!("{:?}, {:?}", data.dim(), target.dim());
 
     let mut model = TwoLayerNet::new(2, HIDDEN_SIZE, 3);
     // let mut optimizer = SGD { lr: 1.0 };

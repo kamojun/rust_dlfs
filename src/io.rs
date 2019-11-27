@@ -3,8 +3,23 @@ use csv::ReaderBuilder;
 use serde::Deserialize;
 use std::error::Error;
 use std::io;
+// extern crate ndarray;
+// use ndarray::Array;
+use crate::types::Arr2d;
 
-type Record = [f32; 2];
+pub fn csv_to_array(filename: &str) -> Result<Arr2d, Box<dyn Error>> {
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(false)
+        .from_path(filename)?;
+    let mut v = Vec::new();
+    for result in rdr.deserialize() {
+        let record: Vec<f32> = result?;
+        v.push(record);
+    }
+    Ok(Array::from_shape_fn((v.len(), v[0].len()), |(i, j)| {
+        v[i][j]
+    }))
+}
 
 pub fn read_csv<T>(filename: &str) -> Result<Vec<T>, Box<dyn Error>>
 where
@@ -29,8 +44,9 @@ mod tests {
     use super::*;
     #[test]
     fn read_csv_test() {
-        let v: Vec<[f32; 2]> = read_csv("./data/spiral/x.csv").unwrap();
-        let arr = Array::from_shape_fn((v.len(), 2), |(i, j)| v[i]);
+        // let v: Vec<Vec<f32>> = read_csv("./data/spiral/x.csv").unwrap();
+        // let arr = Array::from_shape_fn((v.len(), 2), |(i, j)| v[i][j]);
+        let arr = csv_to_array("./data/spiral/t.csv").unwrap();
         println!("{:?}", arr);
     }
 }
