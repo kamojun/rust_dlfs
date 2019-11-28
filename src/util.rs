@@ -1,5 +1,8 @@
 extern crate ndarray;
-use ndarray::{Array2, Array3, Axis};
+use crate::types::*;
+use ndarray::{Array, Array2, Array3, Axis, Dimension, Ix2, Ix3, Slice};
+use ndarray_rand::rand_distr::{StandardNormal, Uniform};
+use ndarray_rand::RandomExt;
 use std::collections::HashMap;
 
 pub fn preprocess(text: &str) -> (Vec<usize>, HashMap<String, usize>, HashMap<usize, String>) {
@@ -65,15 +68,15 @@ pub fn convert_one_hot_2v(corpus: &Vec<Vec<usize>>, vocab_size: usize) -> Vec<Ve
         .collect::<Vec<Vec<Vec<i32>>>>()
 }
 
-pub fn convert_one_hot_1(corpus: &Vec<usize>, vocab_size: usize) -> Array2<i32> {
+pub fn convert_one_hot_1(corpus: &Vec<usize>, vocab_size: usize) -> Array2<f32> {
     let text_len = corpus.len();
     let mut arr = Array2::zeros((text_len, vocab_size));
     for (n, &id) in corpus.iter().enumerate() {
-        arr[[n, id]] = 1;
+        arr[[n, id]] = 1.0;
     }
     arr
 }
-pub fn convert_one_hot_2(corpus: &Vec<Vec<usize>>, vocab_size: usize) -> Array3<i32> {
+pub fn convert_one_hot_2(corpus: &Vec<Vec<usize>>, vocab_size: usize) -> Array3<f32> {
     let text_len = corpus.len();
     let context_len = match corpus.get(0) {
         Some(c) => c.len(),
@@ -105,3 +108,39 @@ pub fn random_index(range: usize) -> Vec<usize> {
 // {
 //     Array2::from_shape_fn((v.len(), n), |(i, j)| v[i][j]);
 // }
+
+pub fn randarr2d(m: usize, n: usize) -> Arr2d {
+    Array::<f32, _>::random((m, n), StandardNormal)
+}
+pub fn randarr1d(m: usize) -> Arr1d {
+    Array::<f32, _>::random((m,), StandardNormal)
+}
+pub fn pickup<T: Copy, D: Dimension>(x: &Array<T, D>, idx: &[usize]) -> Array<T, D> {
+    let x = x.view();
+    let (data_len, input_dim) = match x.shape() {
+        &[a, _, b] => (a, b),
+        &[a, b] => (a, b),
+        _ => panic!("KAMO: dimension of x must be 2 or 3 in model.fit!"),
+    };
+    let dim = x.slice_axis(Axis(0), Slice::from(0..idx.len())).dim();
+    match x.ndim() {
+        2 => x
+            .into_dimensionality::<Ix2>()
+            .map(|newx| {
+                Array::from_shape_fn((idx.len(), input_dim), |(i, j)| newx[[idx[i], j]])
+                    .into_shape(dim)
+                    .expect("no way!")
+            })
+            .expect("no way!"),
+        3 => {
+            let channel_num = x.shape()[1];
+            let newx = x.into_dimensionality::<Ix3>().expect("no way!");
+            Array::from_shape_fn((idx.len(), channel_num, input_dim), |(i, j, k)| {
+                newx[[idx[i], j, k]]
+            })
+            .into_shape(dim)
+            .expect("no way!")
+        }
+        _ => panic!("dim must be 2 or 3, for now!"),
+    }
+}

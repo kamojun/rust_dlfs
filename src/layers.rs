@@ -1,6 +1,7 @@
 extern crate ndarray;
 use super::functions::*;
 use super::types::{Arr1d, Arr2d};
+use crate::util::*;
 use ndarray::{Array, Array1, Array2, Array3, Axis};
 
 /// ANNを構成するレイヤー。入力は一つのものを考える。
@@ -114,6 +115,7 @@ pub trait LayerWithLoss {
     /// (バッチ次元、出力次元)で伝播してきた誤差doutに対し、(バッチ次元、入力次元)
     /// の誤差を後ろに渡す。
     fn backward(&mut self, batch_size: usize) -> Arr2d;
+    fn new() -> Self;
 }
 pub struct SoftMaxWithLoss {
     /// softmaxの出力、すなわち、ラベルの予測確率
@@ -123,14 +125,7 @@ pub struct SoftMaxWithLoss {
     /// 教師ラベル
     target: Array1<usize>,
 }
-impl SoftMaxWithLoss {
-    pub fn new() -> Self {
-        Self {
-            pred: Array::zeros((0, 0)),
-            target: Array::zeros((0,)),
-        }
-    }
-}
+impl SoftMaxWithLoss {}
 impl LayerWithLoss for SoftMaxWithLoss {
     fn predict(&self, input: Arr2d) -> Arr2d {
         softmax(input)
@@ -152,25 +147,53 @@ impl LayerWithLoss for SoftMaxWithLoss {
         // dx * dout / batch_size
         dx * dout // doutはバッチ次元なので、(バッチサイズ, 1)にしてdxとかけれるようにする。
     }
+    fn new() -> Self {
+        Self {
+            pred: Array::zeros((0, 0)),
+            target: Array::zeros((0,)),
+        }
+    }
 }
 
 /// 行列による掛け算
 pub struct MatMul {
     /// (入力次元, チャンネル数)
-    W: Arr2d,
+    w: Arr2d,
     /// (バッチ次元, 入力次元)
     x: Arr2d,
-    dx: Arr2d,
-    dW: Arr2d,
+    dw: Arr2d,
+}
+impl MatMul {
+    pub fn new(w: Arr2d) -> Self {
+        Self {
+            w,
+            x: Array::zeros((0, 0)),
+            dw: Array::zeros((0, 0)),
+        }
+    }
+    pub fn new_from_size(in_size: usize, out_size: usize, scale: Option<f32>) -> Self {
+        // let scale = scale.(1.0);
+        let scale = scale.unwrap_or(1.0);
+        Self {
+            w: randarr2d(in_size, out_size) * scale,
+            x: Array::zeros((0, 0)),
+            dw: Array::zeros((0, 0)),
+        }
+    }
 }
 impl Layer for MatMul {
     fn forward(&mut self, input: Arr2d) -> Arr2d {
         self.x = input;
-        self.x.dot(&self.W)
+        self.x.dot(&self.w)
     }
     fn backward(&mut self, dout: Arr2d) -> Arr2d {
-        self.dx = dout.dot(&self.W.t());
-        self.dW = self.x.t().dot(&dout);
-        self.dx.clone()
+        self.dw = self.x.t().dot(&dout);
+        dout.dot(&self.w.t())
+    }
+    fn params2d(&mut self) -> Vec<&mut Arr2d> {
+        vec![&mut self.w]
+    }
+    fn grads2d(&self) -> Vec<Arr2d> {
+        vec![self.dw.clone()]
     }
 }

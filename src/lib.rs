@@ -13,6 +13,9 @@ mod tests {
     }
 }
 
+#[macro_use]
+pub mod macros;
+
 pub mod functions;
 pub mod io;
 pub mod layers;
@@ -21,5 +24,5 @@ pub mod optimizer;
 pub mod train;
 pub mod trainer;
 pub mod types;
-// pub mod ui;
 pub mod util;
+// pub mod ui;

@@ -4,13 +4,14 @@ use crate::optimizer::{AdaGrad, Optimizer, SGD};
 use crate::types::*;
 use crate::util::*;
 extern crate ndarray;
-use ndarray::{Array, Axis, Dim, Slice};
+use ndarray::{s, Array, Axis, Dim, Dimension, Ix2, Slice};
 
 pub struct Trainer<M: Model, T: Optimizer> {
     model: M,
     optimizer: T,
     loss_list: Vec<f32>,
 }
+
 impl<M: Model, T: Optimizer> Trainer<M, T> {
     pub fn new(model: M, optimizer: T) -> Self {
         Self {
@@ -19,20 +20,25 @@ impl<M: Model, T: Optimizer> Trainer<M, T> {
             loss_list: Vec::new(),
         }
     }
-    pub fn fit(
+    pub fn fit<D: Dimension>(
         &mut self,
-        x: Arr2d,
+        x: Array<f32, D>,
         t: Arr2d,
         max_epoch: usize,
         batch_size: usize,
         max_grad: Option<f32>,
         eval_interval: Option<usize>,
     ) {
-        let (data_len, input_dim) = x.dim();
+        let (data_len, input_dim) = match x.shape() {
+            &[a, _, b] => (a, b),
+            &[a, b] => (a, b),
+            _ => panic!("KAMO: dimension of x must be 2 or 3 in model.fit!"),
+        };
         let target_size = t.shape()[1];
         let max_iters = data_len / batch_size;
         self.loss_list = Vec::<f32>::new();
         let eval_interval = eval_interval.unwrap_or(10);
+
         for epoch in 1..=max_epoch {
             let idx = random_index(data_len);
             //　一定回数イテレーションするたびに平均の損失を記録する
@@ -41,11 +47,12 @@ impl<M: Model, T: Optimizer> Trainer<M, T> {
             for iters in 1..=max_iters {
                 let batch_idx = &idx[(iters - 1) * batch_size..iters * batch_size];
                 // x[batch_idx, :]的なことをしたいのだが...。簡潔にかけないのか?
-                let batch_data =
-                    Array::from_shape_fn((batch_size, input_dim), |(i, j)| x[[batch_idx[i], j]]);
+                // let batch_data =
+                //     Array::from_shape_fn((batch_size, input_dim), |(i, j)| x[[batch_idx[i], j]]);
+                let batch_data = pickup(&x, batch_idx);
                 let batch_target =
                     Array::from_shape_fn((batch_size, target_size), |(i, j)| t[[batch_idx[i], j]]);
-                let loss = self.model.forward(batch_data, &batch_target);
+                let loss = self.model.forwardx(batch_data, batch_target);
                 self.model.backward(batch_size);
                 let grads1d = self.model.grads1d();
                 let grads2d = self.model.grads2d();

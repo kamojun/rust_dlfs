@@ -1,4 +1,5 @@
 use crate::io::*;
+use crate::layers::SoftMaxWithLoss;
 use crate::model::*;
 use crate::optimizer::{AdaGrad, Optimizer, SGD};
 use crate::trainer::*;
@@ -20,7 +21,7 @@ pub fn train2() {
     println!("{:?}", target);
     println!("{:?}, {:?}", data.dim(), target.dim());
 
-    let mut model = TwoLayerNet::new(2, HIDDEN_SIZE, 3);
+    let mut model = TwoLayerNet::<SoftMaxWithLoss>::new(2, HIDDEN_SIZE, 3);
     // let mut optimizer = SGD { lr: 1.0 };
     let mut optimizer = AdaGrad::new(1.0);
     let mut trainer = Trainer::new(model, optimizer);
@@ -51,7 +52,7 @@ pub fn train() {
     let data_len = data.shape()[0];
     assert_eq!(data_len, target.shape()[0]);
 
-    let mut model = TwoLayerNet::new(2, hidden_size, 3);
+    let mut model = TwoLayerNet::<SoftMaxWithLoss>::new(2, hidden_size, 3);
     // let mut optimizer = SGD { lr: 1.0 };
     let mut optimizer = AdaGrad::new(1.0);
 
@@ -65,14 +66,14 @@ pub fn train() {
         let mut loss_count: i32 = 0;
         for iters in 1..=max_iters {
             let batch_idx = &idx[(iters - 1) * batch_size..iters * batch_size];
+            // こういう事したいのだが...。
+            // data.slice_axis(Axis(0), batch_idx);
             let batch_data =
                 Array::from_shape_fn((batch_size, INPUT_DIM), |(i, j)| data[[batch_idx[i], j]]);
             let batch_target = Array::from_shape_fn((batch_size, TARGET_SIZE), |(i, j)| {
                 target[[batch_idx[i], j]]
             });
-            // let batch_target = ...;
             let loss = model.forward(batch_data, &batch_target);
-            // data.slice_axis(Axis(0), batch_idx);
             model.backward(batch_size);
             // moedl.params1dArr1del.grads1dは片方が&mut self, もう片方が&selfでArr1d
             // 実際はselfの中の別々のもArr2dスしているので、問題はないはずだが、Arr2d
@@ -102,9 +103,9 @@ pub fn train() {
         }
     }
     println!("hello?");
-    println!("{:?}", data);
-    println!("{:?}", target);
-    println!("{:?}", loss_list);
+    putsl!(data);
+    putsl!(target);
+    putsl!(loss_list);
 }
 
 #[test]
