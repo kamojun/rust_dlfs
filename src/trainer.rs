@@ -4,7 +4,7 @@ use crate::optimizer::{AdaGrad, Optimizer, SGD};
 use crate::types::*;
 use crate::util::*;
 extern crate ndarray;
-use ndarray::{s, Array, Axis, Dim, Dimension, Ix2, Slice};
+use ndarray::{s, Array, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
 pub struct Trainer<M: Model, T: Optimizer> {
     model: M,
@@ -20,7 +20,7 @@ impl<M: Model, T: Optimizer> Trainer<M, T> {
             loss_list: Vec::new(),
         }
     }
-    pub fn fit<D: Dimension>(
+    pub fn fit<D: RemoveAxis>(
         &mut self,
         x: Array<f32, D>,
         t: Arr2d,

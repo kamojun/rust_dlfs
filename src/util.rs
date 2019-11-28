@@ -1,6 +1,6 @@
 extern crate ndarray;
 use crate::types::*;
-use ndarray::{Array, Array2, Array3, Axis, Dimension, Ix2, Ix3, Slice};
+use ndarray::{Array, Array2, Array3, Axis, Dimension, Ix2, Ix3, RemoveAxis, Slice};
 use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
 use std::collections::HashMap;
@@ -115,7 +115,30 @@ pub fn randarr2d(m: usize, n: usize) -> Arr2d {
 pub fn randarr1d(m: usize) -> Arr1d {
     Array::<f32, _>::random((m,), StandardNormal)
 }
-pub fn pickup<T: Copy, D: Dimension>(x: &Array<T, D>, idx: &[usize]) -> Array<T, D> {
+
+extern crate num_traits;
+use num_traits::Zero;
+pub fn pickup<T: Zero + Copy, D: RemoveAxis>(x: &Array<T, D>, idx: &[usize]) -> Array<T, D> {
+    assert!(
+        x.shape()[0] >= idx.len(),
+        "KAMO: sorry, haven't implemented yet"
+    );
+    // 同じ型で、一番外側の次元数だけidx.len()にしたいのだけど、現状では小さくすることしかできない。
+    let mut a = x
+        .slice_axis(Axis(0), Slice::from(0..idx.len()))
+        .mapv(|_| T::zero());
+    for (i, j) in idx.iter().enumerate() {
+        let mut row = a.index_axis_mut(Axis(0), i); // 移動先
+        let base = x.index_axis(Axis(0), *j); // 移動元
+        for (r, b) in row.iter_mut().zip(base.iter()) {
+            // *r += b;
+            *r = *b;
+        }
+    }
+    a
+}
+
+pub fn pickup2<T: Copy, D: Dimension>(x: &Array<T, D>, idx: &[usize]) -> Array<T, D> {
     let x = x.view();
     let (data_len, input_dim) = match x.shape() {
         &[a, _, b] => (a, b),

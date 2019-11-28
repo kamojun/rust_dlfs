@@ -109,6 +109,6 @@ pub fn train() {
 }
 
 #[test]
-fn test_train() {
+fn ch01_train() {
     train2();
 }
