@@ -1,6 +1,8 @@
 extern crate ndarray;
 use crate::types::*;
-use ndarray::{Array, Array2, Array3, Axis, Dimension, Ix2, Ix3, RemoveAxis, Slice};
+use ndarray::{
+    Array, Array1, Array2, Array3, ArrayView1, Axis, Dimension, Ix2, Ix3, RemoveAxis, Slice,
+};
 use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
 use std::collections::HashMap;
@@ -80,10 +82,9 @@ pub fn convert_one_hot_2(corpus: &Vec<Vec<usize>>, vocab_size: usize) -> Array3<
     let text_len = corpus.len();
     let context_len = match corpus.get(0) {
         Some(c) => c.len(),
-        None => panic!("corpus len is zero! therefor context len unknown! by kamo"),
+        None => panic!("KAMO: corpus len is zero! therefor context len unknown!"),
     };
     let mut arr = Array3::zeros((text_len, context_len, vocab_size));
-
     for (mut v, word) in arr.axis_iter_mut(Axis(0)).zip(corpus.iter()) {
         v.assign(&convert_one_hot_1(word, vocab_size));
     }
@@ -118,27 +119,97 @@ pub fn randarr1d(m: usize) -> Arr1d {
 
 extern crate num_traits;
 use num_traits::Zero;
-pub fn pickup<T: Zero + Copy, D: RemoveAxis>(x: &Array<T, D>, idx: &[usize]) -> Array<T, D> {
+/// 元の行列より小さくなる(次元はそのまま)
+pub fn pickup<T: Zero + Copy, D: RemoveAxis>(
+    x: &Array<T, D>,
+    axis: Axis,
+    idx: &[usize],
+) -> Array<T, D> {
     assert!(
-        x.shape()[0] >= idx.len(),
+        x.shape()[axis.0] >= idx.len(),
         "KAMO: sorry, haven't implemented yet"
     );
     // 同じ型で、一番外側の次元数だけidx.len()にしたいのだけど、現状では小さくすることしかできない。
     let mut a = x
-        .slice_axis(Axis(0), Slice::from(0..idx.len()))
+        .slice_axis(axis, Slice::from(0..idx.len()))
         .mapv(|_| T::zero());
+    // .to_owned();  // これならT::zero()は不要
     for (i, j) in idx.iter().enumerate() {
-        let mut row = a.index_axis_mut(Axis(0), i); // 移動先
-        let base = x.index_axis(Axis(0), *j); // 移動元
-        for (r, b) in row.iter_mut().zip(base.iter()) {
-            // *r += b;
-            *r = *b;
-        }
+        let mut row = a.index_axis_mut(axis, i); // 移動先
+        let base = &x.index_axis(axis, *j); // 移動元
+        row.assign(base);
+        // for (r, b) in row.iter_mut().zip(base.iter()) {
+        //     // *r += b;
+        //     *r = *b;
+        // }
     }
     a
 }
 
-pub fn pickup2<T: Copy, D: Dimension>(x: &Array<T, D>, idx: &[usize]) -> Array<T, D> {
+/// idxとしてArrayView1を受け取る。
+/// pickup関数とほぼ同じ
+pub fn pickup1<T: Zero + Copy, D: RemoveAxis>(
+    x: &Array<T, D>,
+    axis: Axis,
+    idx: ArrayView1<usize>,
+) -> Array<T, D> {
+    assert!(
+        x.shape()[axis.0] >= idx.len(),
+        "KAMO: sorry, haven't implemented yet"
+    );
+    // 同じ型で、一番外側の次元数だけidx.len()にしたいのだけど、現状では小さくすることしかできない。
+    let mut a = x
+        .slice_axis(axis, Slice::from(0..idx.len()))
+        .mapv(|_| T::zero());
+    for (i, j) in idx.iter().enumerate() {
+        let mut row = a.index_axis_mut(axis, i); // 移動先
+        let base = &x.index_axis(axis, *j); // 移動元
+        row.assign(base);
+    }
+    a
+}
+
+/// idxの型をジェネリックにしたかったけど、全く使えない。
+pub fn pickup0<T: Zero + Copy, D: RemoveAxis>(
+    x: &Array<T, D>,
+    axis: Axis,
+    idx: impl ExactSizeIterator<Item = usize>,
+) -> Array<T, D> {
+    assert!(
+        x.shape()[axis.0] >= idx.len(),
+        "KAMO: sorry, haven't implemented yet"
+    );
+    // 同じ型で、一番外側の次元数だけidx.len()にしたいのだけど、現状では小さくすることしかできない。
+    let mut a = x
+        .slice_axis(axis, Slice::from(0..idx.len()))
+        .mapv(|_| T::zero());
+    // .to_owned();  // これならT::zero()は不要
+    for (i, j) in idx.into_iter().enumerate() {
+        let mut row = a.index_axis_mut(axis, i); // 移動先
+        let base = &x.index_axis(axis, j); // 移動元
+        row.assign(base);
+    }
+    a
+}
+/// 元の次元より大きくもできる
+fn pickup2<T: Copy + Zero, D: RemoveAxis>(
+    x: &Array<T, D>,
+    axis: Axis,
+    idx: &[usize],
+) -> Array<T, D> {
+    // assert!(true);   // idxのrangeとか色々調べた方が良さそうだな。
+    let mut s = x.shape().to_vec();
+    s[axis.0] = idx.len();
+    // 本当は、array作ってからD型にconvertするより、s: shapeの時点でD型にしときたいが、やり方わからず。
+    // なお、T: Zeroについては、aが初期化さえできれば良いので、zero出なくて、何か初期値があれば良い、多分
+    let mut a = Array::zeros(s).into_dimensionality::<D>().expect("no way!");
+    for (mut row, i) in a.axis_iter_mut(axis).zip(idx.iter()) {
+        row.assign(&x.index_axis(axis, *i));
+    }
+    a
+}
+
+pub fn pickup_old<T: Copy, D: Dimension>(x: &Array<T, D>, idx: &[usize]) -> Array<T, D> {
     let x = x.view();
     let (data_len, input_dim) = match x.shape() {
         &[a, _, b] => (a, b),
@@ -166,4 +237,12 @@ pub fn pickup2<T: Copy, D: Dimension>(x: &Array<T, D>, idx: &[usize]) -> Array<T
         }
         _ => panic!("dim must be 2 or 3, for now!"),
     }
+}
+
+#[test]
+pub fn test_pickup() {
+    let arr = Array::from_shape_fn((3, 4), |(i, j)| i * j);
+    putsl!(arr);
+    putsl!(pickup(&arr, Axis(0), &[1, 1, 1]));
+    putsl!(pickup2(&arr, Axis(0), &[1, 1, 1, 2, 2]));
 }

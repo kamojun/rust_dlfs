@@ -7,7 +7,7 @@ extern crate ndarray;
 use ndarray::{s, Array, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
 pub struct Trainer<M: Model, T: Optimizer> {
-    model: M,
+    pub model: M,
     optimizer: T,
     loss_list: Vec<f32>,
 }
@@ -37,7 +37,7 @@ impl<M: Model, T: Optimizer> Trainer<M, T> {
         let target_size = t.shape()[1];
         let max_iters = data_len / batch_size;
         self.loss_list = Vec::<f32>::new();
-        let eval_interval = eval_interval.unwrap_or(10);
+        let eval_interval = eval_interval.unwrap_or(max_iters);
 
         for epoch in 1..=max_epoch {
             let idx = random_index(data_len);
@@ -49,9 +49,10 @@ impl<M: Model, T: Optimizer> Trainer<M, T> {
                 // x[batch_idx, :]的なことをしたいのだが...。簡潔にかけないのか?
                 // let batch_data =
                 //     Array::from_shape_fn((batch_size, input_dim), |(i, j)| x[[batch_idx[i], j]]);
-                let batch_data = pickup(&x, batch_idx);
-                let batch_target =
-                    Array::from_shape_fn((batch_size, target_size), |(i, j)| t[[batch_idx[i], j]]);
+                let batch_data = pickup(&x, Axis(0), batch_idx);
+                // let batch_target =
+                //     Array::from_shape_fn((batch_size, target_size), |(i, j)| t[[batch_idx[i], j]]);
+                let batch_target = pickup(&t, Axis(0), batch_idx);
                 let loss = self.model.forwardx(batch_data, batch_target);
                 self.model.backward(batch_size);
                 let grads1d = self.model.grads1d();

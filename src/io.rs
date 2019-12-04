@@ -46,7 +46,9 @@ mod tests {
     fn read_csv_test() {
         // let v: Vec<Vec<f32>> = read_csv("./data/spiral/x.csv").unwrap();
         // let arr = Array::from_shape_fn((v.len(), 2), |(i, j)| v[i][j]);
-        let arr = csv_to_array("./data/spiral/t.csv").unwrap();
-        println!("{:?}", arr);
+        // let arr = csv_to_array("./data/spiral/t.csv").unwrap();
+        // println!("{:?}", arr);
+        let c = read_csv::<(usize, String)>("./data/ptb/id.csv").expect("error!!!");
+        putsl!(c);
     }
 }

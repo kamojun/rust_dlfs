@@ -155,10 +155,20 @@ impl LayerWithLoss for SoftMaxWithLoss {
     }
 }
 
+struct SigmodWithLoss {}
+struct EmbeddingDot {}
+
+pub struct NegativeSamplingLoss {
+    sample_size: usize,
+    // sampler,
+    loss_layers: [SigmodWithLoss; 6],
+    embed_loss_layers: [EmbeddingDot; 6],
+}
+
 /// 行列による掛け算
 pub struct MatMul {
     /// (入力次元, チャンネル数)
-    w: Arr2d,
+    pub w: Arr2d,
     /// (バッチ次元, 入力次元)
     x: Arr2d,
     dw: Arr2d,
@@ -195,5 +205,46 @@ impl Layer for MatMul {
     }
     fn grads2d(&self) -> Vec<Arr2d> {
         vec![self.dw.clone()]
+    }
+}
+
+pub struct Embedding {
+    /// 語彙数、hidden_size
+    w: Arr2d,
+    dw: Arr2d,
+    // batch_size, context_size(単語id: usizeからなる配列)
+    idx: Array2<usize>,
+}
+/// 出力はbatchsize, hiddensize
+/// 入力idxは(batchsize, contextlen)で各行は、出現した単語のidである
+/// 例えば[3,1,2,1,5] -> [2,1,1,0,5,0](語彙数6の場合)というような変形ができる
+impl Embedding {
+    pub fn forward(&mut self, idx: Array2<usize>) -> Arr2d {
+        self.idx = idx;
+        let mut out = Array2::zeros((self.idx.shape()[0], self.w.shape()[1]));
+        // out, idx共にまずbatch方向に回す
+        for (mut _o, _x) in out.outer_iter_mut().zip(self.idx.outer_iter()) {
+            // _xにはどの単語が出現したが記録されている
+            for __x in _x.iter() {
+                // 単語__xが出現したら、そのベクトルを_oに加算する
+                // 同じ単語が複数回出現していたら、例えば2回足さずに2倍して1回足す方が早いだろうが、
+                // このループはせいぜい10回とかなので、意味ないだろう。
+                // それより長さ10を走査する方が時間かかりそう,,,
+                // でもないか??
+                _o += &self.w.index_axis(Axis(0), *__x);
+            }
+        }
+        out
+    }
+    pub fn backward(&mut self, dout: Arr2d) {
+        self.dw = Array2::zeros(self.w.dim());
+        // まずバッチ方向に回す
+        for (_o, _x) in dout.outer_iter().zip(self.idx.outer_iter()) {
+            // _xにはどの単語が出現したか記録されている。
+            // その単語id__xを見て、self.wの行に_oを加算する。
+            for __x in _x.iter() {
+                self.dw.index_axis_mut(Axis(0), *__x).assign(&_o);
+            }
+        }
     }
 }

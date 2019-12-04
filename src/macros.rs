@@ -3,6 +3,7 @@ macro_rules! puts {
         $(
             print!("{:?} ", $x);
         )*
+        println!();
     };
 }
 
@@ -10,14 +11,15 @@ macro_rules! putsd {
     ($( $x:expr), *) => {
         $(
             print!("{}= {:?}; ", stringify!($x), $x);
-        )*
+        )*        println!();
+
     };
 }
 
 macro_rules! putsl {
     ($( $x:expr), *) => {
         $(
-            print!("{}= {:?}\n", stringify!($x), $x);
+            println!("{}= {:?}", stringify!($x), $x);
         )*
     };
 }

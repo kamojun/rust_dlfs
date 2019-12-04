@@ -125,12 +125,15 @@ impl<L: LayerWithLoss> SimpleCBOW<L> {
             out_layer,
         }
     }
-    pub fn layers(&mut self) -> Vec<&mut Layer> {
+    pub fn layers(&mut self) -> Vec<&mut dyn Layer> {
         vec![
             &mut self.in_layer_1,
             &mut self.in_layer_2,
             &mut self.out_layer,
         ]
+    }
+    pub fn word_vecs(&self) -> Arr2d {
+        self.in_layer_1.w.clone()
     }
 }
 impl<L: LayerWithLoss> Model for SimpleCBOW<L> {
@@ -138,8 +141,8 @@ impl<L: LayerWithLoss> Model for SimpleCBOW<L> {
         let x = contexts
             .into_dimensionality::<Ix3>()
             .expect("contexts array must be dim3");
-        let h0 = x.index_axis(Axis(1), 0).to_owned();
-        let h1 = x.index_axis(Axis(1), 1).to_owned();
+        let h0 = self.in_layer_1.forward(x.index_axis(Axis(1), 0).to_owned());
+        let h1 = self.in_layer_2.forward(x.index_axis(Axis(1), 1).to_owned());
         let h = (h0 + h1) * 0.5;
         let score = self.out_layer.forward(h);
         self.loss_layer.forward(score, &target)
@@ -159,14 +162,13 @@ impl<L: LayerWithLoss> Model for SimpleCBOW<L> {
         // self.in_layer_1.grads2d()[0];
         let mut layers = self.layers();
         // concat(layers.iter_mut().map(|l| l.params2d()))
-        self.in_layer_1.params2d();
+        // concat([&mut self.in_layer_1, &mut self.in_layer_2, &mut self.out_layer].iter_mut().map(|l| l.params2d()).collect::<Vec<Vec<&mut Arr2d>>>());
+        // let c = concat(self.layers().iter_mut().map(|l| l.params2d()).collect::<Vec<_>>());
         concat(vec![
             self.in_layer_1.params2d(),
             self.in_layer_2.params2d(),
             self.out_layer.params2d(),
         ])
-        // self.layers().into_iter().
-        // concat(self.layers().map(|l| l.grads2d()))
     }
     fn grads2d(&self) -> Vec<Arr2d> {
         concat(vec![
