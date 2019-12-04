@@ -4,6 +4,8 @@ use super::types::{Arr1d, Arr2d};
 use crate::util::*;
 use ndarray::{Array, Array1, Array2, Array3, Axis};
 
+pub mod negativ_sampling_layer;
+
 /// ANNを構成するレイヤー。入力は一つのものを考える。
 pub trait Layer {
     /// (バッチ次元、入力次元)の入力inputに対し、(バッチ次元、出力次元)を返す。
@@ -111,7 +113,12 @@ impl Layer for SoftMax {
 pub trait LayerWithLoss {
     fn predict(&self, input: Arr2d) -> Arr2d;
     /// (バッチ次元、入力次元)の入力inputに対し、(バッチ次元、出力次元)を返す。
-    fn forward(&mut self, input: Arr2d, one_hot_target: &Arr2d) -> f32;
+    fn forward(&mut self, input: Arr2d, one_hot_target: &Arr2d) -> f32 {
+        self.forward2(input, reverse_one_hot(one_hot_target))
+    }
+    fn forward2(&mut self, input: Arr2d, one_hot_target: Array1<usize>) -> f32 {
+        unimplemented!()
+    }
     /// (バッチ次元、出力次元)で伝播してきた誤差doutに対し、(バッチ次元、入力次元)
     /// の誤差を後ろに渡す。
     fn backward(&mut self, batch_size: usize) -> Arr2d;
@@ -130,11 +137,9 @@ impl LayerWithLoss for SoftMaxWithLoss {
     fn predict(&self, input: Arr2d) -> Arr2d {
         softmax(input)
     }
-    fn forward(&mut self, input: Arr2d, one_hot_target: &Arr2d) -> f32 {
+    fn forward2(&mut self, input: Arr2d, target: Array1<usize>) -> f32 {
         self.pred = self.predict(input);
-        self.target = reverse_one_hot(one_hot_target);
-        // self.out = cross_entropy_error_target(&self.pred, &self.target);
-        // self.out.clone()
+        self.target = target;
         cross_entropy_error_target(&self.pred, &self.target)
     }
     fn backward(&mut self, batch_size: usize) -> Arr2d {
@@ -155,14 +160,17 @@ impl LayerWithLoss for SoftMaxWithLoss {
     }
 }
 
-struct SigmodWithLoss {}
-struct EmbeddingDot {}
-
-pub struct NegativeSamplingLoss {
-    sample_size: usize,
-    // sampler,
-    loss_layers: [SigmodWithLoss; 6],
-    embed_loss_layers: [EmbeddingDot; 6],
+pub struct SigmodWithLoss {}
+impl LayerWithLoss for SigmodWithLoss {
+    fn predict(&self, input: Arr2d) -> Arr2d {
+        unimplemented!();
+    }
+    fn backward(&mut self, batch_size: usize) -> Arr2d {
+        unimplemented!();
+    }
+    fn new() -> Self {
+        unimplemented!();
+    }
 }
 
 /// 行列による掛け算
