@@ -1,9 +1,10 @@
 use super::layers::*;
 use super::types::*;
+use crate::layers::loss_layer::*;
 use crate::util::*;
 // extern crate ndarray;
 use itertools::concat;
-use ndarray::{Array, Axis, Dimension, Ix2, Ix3};
+use ndarray::{Array, Array1, Axis, Dimension, Ix2, Ix3};
 use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
 
@@ -13,7 +14,12 @@ pub trait Model {
         unimplemented!();
     }
     /// 最後まで進める
+    /// ターゲットはone_hot
     fn forward(&mut self, x: Arr2d, t: &Arr2d) -> f32 {
+        unimplemented!();
+    }
+    /// ターゲットはラベルベクトル
+    fn forwardt(&mut self, x: Arr2d, t: &Array1<usize>) -> f32 {
         unimplemented!();
     }
     fn forwardx<D: Dimension>(&mut self, x: Array<f32, D>, t: Arr2d) -> f32;
@@ -45,7 +51,7 @@ impl<L: LayerWithLoss> TwoLayerNet<L> {
         let w2 = randarr2d(hidden_size, output_size) * PARAM_INIT_SCALE;
         let b2 = randarr1d(output_size) * PARAM_INIT_SCALE;
         let affine1 = Affine::new(w1, b1);
-        let sigmoid = Sigmoid::new();
+        let sigmoid: Sigmoid = Default::default();
         let affine2 = Affine::new(w2, b2);
         let layers: [Box<dyn Layer>; 3] = [Box::new(affine1), Box::new(sigmoid), Box::new(affine2)];
         Self {

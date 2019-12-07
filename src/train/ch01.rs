@@ -1,5 +1,5 @@
 use crate::io::*;
-use crate::layers::SoftMaxWithLoss;
+use crate::layers::loss_layer::SoftMaxWithLoss;
 use crate::model::*;
 use crate::optimizer::{AdaGrad, Adam, Optimizer, SGD};
 use crate::trainer::*;

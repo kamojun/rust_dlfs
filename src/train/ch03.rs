@@ -1,3 +1,4 @@
+use crate::layers::loss_layer::*;
 use crate::layers::*;
 use crate::model::SimpleCBOW;
 use crate::optimizer::{AdaGrad, Optimizer, SGD};

@@ -1,9 +1,10 @@
 extern crate ndarray;
 use super::functions::*;
-use super::types::{Arr1d, Arr2d};
+use super::types::{Arr1d, Arr2d, Arr3d};
 use crate::util::*;
-use ndarray::{Array, Array1, Array2, Array3, Axis};
-
+use itertools::izip;
+use ndarray::{Array, Array1, Array2, Array3, Axis, Dimension};
+pub mod loss_layer;
 pub mod negativ_sampling_layer;
 
 /// ANNを構成するレイヤー。入力は一つのものを考える。
@@ -27,15 +28,9 @@ pub trait Layer {
     }
 }
 
+#[derive(Default)]
 pub struct Sigmoid {
     out: Arr2d,
-}
-impl Sigmoid {
-    pub fn new() -> Self {
-        Sigmoid {
-            out: Array::zeros((0, 0)),
-        }
-    }
 }
 pub struct Affine {
     w: Arr2d,
@@ -49,21 +44,15 @@ impl Affine {
         Self {
             w,
             b,
-            x: Array::zeros((0, 0)),
-            dw: Array::zeros((0, 0)),
-            db: Array::zeros((0,)),
+            x: Default::default(),
+            dw: Default::default(),
+            db: Default::default(),
         }
     }
 }
+#[derive(Default)]
 pub struct SoftMax {
     out: Arr2d,
-}
-impl SoftMax {
-    pub fn new() -> Self {
-        Self {
-            out: Array::zeros((0, 0)),
-        }
-    }
 }
 
 impl Layer for Sigmoid {
@@ -110,69 +99,6 @@ impl Layer for SoftMax {
     }
 }
 
-pub trait LayerWithLoss {
-    fn predict(&self, input: Arr2d) -> Arr2d;
-    /// (バッチ次元、入力次元)の入力inputに対し、(バッチ次元、出力次元)を返す。
-    fn forward(&mut self, input: Arr2d, one_hot_target: &Arr2d) -> f32 {
-        self.forward2(input, reverse_one_hot(one_hot_target))
-    }
-    fn forward2(&mut self, input: Arr2d, one_hot_target: Array1<usize>) -> f32 {
-        unimplemented!()
-    }
-    /// (バッチ次元、出力次元)で伝播してきた誤差doutに対し、(バッチ次元、入力次元)
-    /// の誤差を後ろに渡す。
-    fn backward(&mut self, batch_size: usize) -> Arr2d;
-    fn new() -> Self;
-}
-pub struct SoftMaxWithLoss {
-    /// softmaxの出力、すなわち、ラベルの予測確率
-    pred: Arr2d,
-    // /// 誤差関数の出力
-    // out: Arr1d,
-    /// 教師ラベル
-    target: Array1<usize>,
-}
-impl SoftMaxWithLoss {}
-impl LayerWithLoss for SoftMaxWithLoss {
-    fn predict(&self, input: Arr2d) -> Arr2d {
-        softmax(input)
-    }
-    fn forward2(&mut self, input: Arr2d, target: Array1<usize>) -> f32 {
-        self.pred = self.predict(input);
-        self.target = target;
-        cross_entropy_error_target(&self.pred, &self.target)
-    }
-    fn backward(&mut self, batch_size: usize) -> Arr2d {
-        // let batch_size = dout.Arr1d; // Arr2dッチで平均されるので、各バッチの寄与は1/batch_size か?
-        let dout: Arr2d = Array::from_elem((batch_size, 1), 1.0 / batch_size as f32);
-        let mut dx = self.pred.clone(); // これを使う
-        for (i, t) in self.target.iter().enumerate() {
-            dx[[i, *t]] -= 1.0; // 誤差(正解ラベルでの確率は1なのでそれを引く)
-        }
-        // dx * dout / batch_size
-        dx * dout // doutはバッチ次元なので、(バッチサイズ, 1)にしてdxとかけれるようにする。
-    }
-    fn new() -> Self {
-        Self {
-            pred: Array::zeros((0, 0)),
-            target: Array::zeros((0,)),
-        }
-    }
-}
-
-pub struct SigmodWithLoss {}
-impl LayerWithLoss for SigmodWithLoss {
-    fn predict(&self, input: Arr2d) -> Arr2d {
-        unimplemented!();
-    }
-    fn backward(&mut self, batch_size: usize) -> Arr2d {
-        unimplemented!();
-    }
-    fn new() -> Self {
-        unimplemented!();
-    }
-}
-
 /// 行列による掛け算
 pub struct MatMul {
     /// (入力次元, チャンネル数)
@@ -185,8 +111,8 @@ impl MatMul {
     pub fn new(w: Arr2d) -> Self {
         Self {
             w,
-            x: Array::zeros((0, 0)),
-            dw: Array::zeros((0, 0)),
+            x: Default::default(),
+            dw: Default::default(),
         }
     }
     pub fn new_from_size(in_size: usize, out_size: usize, scale: Option<f32>) -> Self {
@@ -194,8 +120,8 @@ impl MatMul {
         let scale = scale.unwrap_or(1.0);
         Self {
             w: randarr2d(in_size, out_size) * scale,
-            x: Array::zeros((0, 0)),
-            dw: Array::zeros((0, 0)),
+            x: Default::default(),
+            dw: Default::default(),
         }
     }
 }
@@ -229,7 +155,8 @@ pub struct Embedding {
 impl Embedding {
     pub fn forward(&mut self, idx: Array2<usize>) -> Arr2d {
         self.idx = idx;
-        let mut out = Array2::zeros((self.idx.shape()[0], self.w.shape()[1]));
+        let (batch_size, context_len) = self.idx.dim();
+        let mut out = Array2::zeros((batch_size, self.w.shape()[1]));
         // out, idx共にまずbatch方向に回す
         for (mut _o, _x) in out.outer_iter_mut().zip(self.idx.outer_iter()) {
             // _xにはどの単語が出現したが記録されている
@@ -242,7 +169,7 @@ impl Embedding {
                 _o += &self.w.index_axis(Axis(0), *__x);
             }
         }
-        out
+        out / (batch_size as f32) // 加算した後平均をとる
     }
     pub fn backward(&mut self, dout: Arr2d) {
         self.dw = Array2::zeros(self.w.dim());
@@ -251,7 +178,67 @@ impl Embedding {
             // _xにはどの単語が出現したか記録されている。
             // その単語id__xを見て、self.wの行に_oを加算する。
             for __x in _x.iter() {
-                self.dw.index_axis_mut(Axis(0), *__x).assign(&_o);
+                let mut row = self.dw.index_axis_mut(Axis(0), *__x);
+                row += &_o;
+            }
+        }
+        self.dw /= dout.shape()[0] as f32;
+    }
+}
+
+pub struct Embedding1d {
+    /// 語彙数、hidden_size
+    w: Arr2d,
+    dw: Arr2d,
+    // batch_size (単語id: usizeからなる配列)
+    idx: Array1<usize>,
+}
+/// 出力はbatchsize, hiddensize
+/// 入力idxは(batchsize, contextlen)で各行は、出現した単語のidである
+/// 例えば[3,1,2,1,5] -> [2,1,1,0,5,0](語彙数6の場合)というような変形ができる
+impl Embedding1d {
+    pub fn forward(&mut self, idx: Array1<usize>) -> Arr2d {
+        self.idx = idx;
+        pickup1(&self.w, Axis(0), self.idx.view())
+    }
+    pub fn backward(&mut self, dout: Arr2d) {
+        self.dw = Array2::zeros(self.w.dim());
+        // まずバッチ方向に回す
+        for (_o, _x) in dout.outer_iter().zip(self.idx.iter()) {
+            let mut row = self.dw.index_axis_mut(Axis(0), *_x);
+            row += &_o;
+        }
+    }
+}
+
+pub struct Embedding2d {
+    /// 語彙数, channel_num
+    w: Arr2d,
+    dw: Arr2d,
+    // (batch_size, sample_num) (単語id: usizeからなる行列)
+    idx: Array2<usize>,
+}
+/// 出力はbatchsize, sample_num, channel_num
+/// 入力idx(batchsize, sampl_num)の各行は、抽出した単語のidである
+impl Embedding2d {
+    pub fn forward(&mut self, idx: Array2<usize>) -> Arr3d {
+        let (batch_size, sample_num) = idx.dim();
+        let channel_num = self.w.dim().1;
+        let mut out: Arr3d = Array3::zeros((batch_size, sample_num, channel_num));
+        for (mut _o, _x) in out.outer_iter_mut().zip(idx.outer_iter()) {
+            _o.assign(&pickup1(&self.w, Axis(0), _x));
+        }
+        self.idx = idx;
+        out
+    }
+    /// dout: (batch_size, sample_num, channel_num)
+    pub fn backward(&mut self, dout: Arr3d) {
+        self.dw = Array2::zeros(self.w.dim());
+        // バッチ方向に回す
+        for (_o, _x) in dout.outer_iter().zip(self.idx.outer_iter()) {
+            for (__o, __x) in _o.outer_iter().zip(_x.iter()) {
+                let mut row = self.dw.index_axis_mut(Axis(0), *__x);
+                row += &__o;
             }
         }
     }

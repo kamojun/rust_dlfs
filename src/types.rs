@@ -1,12 +1,8 @@
 extern crate ndarray;
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, Array3};
 pub type Arr1d = Array1<f32>;
 pub type Arr2d = Array2<f32>;
-
-pub enum Arr {
-    Arr1d(Arr1d),
-    Arr2d(Arr2d),
-}
+pub type Arr3d = Array3<f32>;
 
 use std::marker::Sized;
 use std::ops::{Deref, Mul, SubAssign};
