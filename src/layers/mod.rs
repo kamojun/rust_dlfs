@@ -184,6 +184,19 @@ impl Embedding {
         }
         self.dw /= dout.shape()[0] as f32;
     }
+    pub fn params(&mut self) -> Vec<&mut Arr2d> {
+        vec![&mut self.w]
+    }
+    pub fn grads(&self) -> Vec<Arr2d> {
+        vec![self.dw.clone()]
+    }
+    pub fn new(w: Arr2d) -> Self {
+        Self {
+            w,
+            dw: Default::default(),
+            idx: Default::default(),
+        }
+    }
 }
 
 pub struct Embedding1d {
@@ -240,6 +253,19 @@ impl Embedding2d {
                 let mut row = self.dw.index_axis_mut(Axis(0), *__x);
                 row += &__o;
             }
+        }
+    }
+    fn params(&mut self) -> Vec<&mut Arr2d> {
+        vec![&mut self.w]
+    }
+    fn grads(&self) -> Vec<Arr2d> {
+        vec![self.dw.clone()]
+    }
+    fn new(w: Arr2d) -> Self {
+        Self {
+            w,
+            dw: Default::default(),
+            idx: Default::default(),
         }
     }
 }

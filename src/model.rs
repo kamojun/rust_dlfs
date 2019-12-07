@@ -1,12 +1,56 @@
 use super::layers::*;
 use super::types::*;
 use crate::layers::loss_layer::*;
+use crate::layers::negativ_sampling_layer::*;
 use crate::util::*;
 // extern crate ndarray;
 use itertools::concat;
 use ndarray::{Array, Array1, Axis, Dimension, Ix2, Ix3};
 use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
+
+pub trait Model2 {
+    fn new(ws: &[Arr2d]) -> Self;
+    fn forward<D: Dimension>(&mut self, input: Array<usize, D>, target: Array1<usize>) -> f32 {
+        unimplemented!();
+    }
+    fn backward(&mut self) {}
+    fn params(&mut self) -> Vec<&mut Arr2d> {
+        vec![]
+    }
+    fn grads(&self) -> Vec<Arr2d> {
+        vec![]
+    }
+}
+pub struct CBOW {
+    in_layer: Embedding,
+    loss_layer: NegativeSamplingLoss,
+}
+impl Model2 for CBOW {
+    fn forward<D: Dimension>(&mut self, input: Array<usize, D>, target: Array1<usize>) -> f32 {
+        let input = input
+            .into_dimensionality::<Ix2>()
+            .expect("CBOW: input size must be dim2");
+        let h = self.in_layer.forward(input);
+        self.loss_layer.forward2(h, target)
+    }
+    fn backward(&mut self) {
+        let dx = self.loss_layer.backward(1); // batch_sizeは使わない
+        self.in_layer.backward(dx);
+    }
+    fn params(&mut self) -> Vec<&mut Arr2d> {
+        concat(vec![self.in_layer.params(), self.loss_layer.params()])
+    }
+    fn grads(&self) -> Vec<Arr2d> {
+        concat(vec![self.in_layer.grads(), self.loss_layer.grads()])
+    }
+    fn new(ws: &[Arr2d]) -> Self {
+        Self {
+            in_layer: Embedding::new(ws[0].clone()),
+            loss_layer: NegativeSamplingLoss::new(&ws[1..]),
+        }
+    }
+}
 
 pub trait Model {
     /// 最後のloss_layerについて、勾配計算は目的とせず、ただ学習に基づく予想を出力させる
@@ -59,7 +103,7 @@ impl<L: LayerWithLoss> TwoLayerNet<L> {
             hidden_size,
             output_size,
             layers,
-            loss_layer: L::new(),
+            loss_layer: L::new(&[]),
         }
     }
 }
@@ -125,7 +169,7 @@ impl<L: LayerWithLoss> SimpleCBOW<L> {
         Self {
             vocab_size,
             hidden_size,
-            loss_layer: L::new(),
+            loss_layer: L::new(&[]),
             in_layer_1,
             in_layer_2,
             out_layer,

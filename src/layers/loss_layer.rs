@@ -18,7 +18,13 @@ pub trait LayerWithLoss {
     /// (バッチ次元、出力次元)で伝播してきた誤差doutに対し、(バッチ次元、入力次元)
     /// の誤差を後ろに渡す。
     fn backward(&mut self, batch_size: usize) -> Arr2d;
-    fn new() -> Self;
+    fn new(wvec: &[Arr2d]) -> Self;
+    fn params(&mut self) -> Vec<&mut Arr2d> {
+        vec![]
+    }
+    fn grads(&self) -> Vec<Arr2d> {
+        vec![]
+    }
 }
 
 #[derive(Default)]
@@ -50,7 +56,7 @@ impl LayerWithLoss for SoftMaxWithLoss {
         // dx * dout / batch_size
         dx * dout // doutはバッチ次元なので、(バッチサイズ, 1)にしてdxとかけれるようにする。
     }
-    fn new() -> Self {
+    fn new(wvec: &[Arr2d]) -> Self {
         Default::default()
     }
 }

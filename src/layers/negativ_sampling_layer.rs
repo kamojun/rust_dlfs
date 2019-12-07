@@ -58,32 +58,20 @@ impl EmbeddingDot2d {
         self.embed.backward(dtarget_w); // 元のwに埋め込む
         (&self.target_w * &dout).sum_axis(Axis(1)) // sample_num方向に潰す
     }
-    fn new() -> Self {
-        unimplemented!()
+    fn new(w: Arr2d) -> Self {
+        Self {
+            embed: Embedding2d::new(w),
+            input: Default::default(),
+            target_w: Default::default(),
+        }
+    }
+    fn params(&mut self) -> Vec<&mut Arr2d> {
+        self.embed.params()
+    }
+    fn grads(&self) -> Vec<Arr2d> {
+        self.embed.grads()
     }
 }
-// struct EmbeddingDot2d {
-//     /// (word_num, ch)
-//     w: Arr2d,
-//     /// (bs, ch)
-//     input: Arr2d,
-//     idx: Array2<usize>,
-// }
-// impl EmbeddingDot2d{
-//     /// input: (bs, ch), idx: (bs, samplnum), output: (bs, samplnum)
-//     /// 各行で、idxによりwからサンプリングして、inputと掛ける
-//     fn forward(&mut self, input: Arr2d, idx: Array2<usize>) -> Arr2d {
-//         let (batch_size, samplnum) = idx.dim();
-//         let out: Arr2d = Array2::zeros((idx.dim()));
-//         for (_o, _x, _i) in izip!(out.outer_iter_mut(), idx.outer_iter(), input.outer_iter()) {
-//             _o.assign(&pickup1(&self.w, Axis(0), _x).dot(&_i));
-//         };
-//         self.idx = idx;
-//         out
-//     }
-//     fn backward(&mut self, out: Arr2d) -> Arr2d {
-//     }
-// }
 
 struct Sampler {
     sample_size: usize,
@@ -110,17 +98,23 @@ impl LayerWithLoss for NegativeSamplingLoss {
         let out = self.embed.forward(input, target_and_negative_sample);
         self.loss_layer.forward(out, label)
     }
-    fn backward(&mut self, batch_size: usize) -> Arr2d {
+    fn backward(&mut self, unused: usize) -> Arr2d {
         let mut dx = self.loss_layer.backward();
         dx = self.embed.backward(dx);
         dx
     }
-    fn new() -> Self {
+    fn new(ws: &[Arr2d]) -> Self {
         Self {
             sample_size: 0,
             sampler: Sampler::new(),
             loss_layer: Default::default(),
-            embed: EmbeddingDot2d::new(),
+            embed: EmbeddingDot2d::new(ws[0].clone()),
         }
+    }
+    fn params(&mut self) -> Vec<&mut Arr2d> {
+        self.embed.params()
+    }
+    fn grads(&self) -> Vec<Arr2d> {
+        self.embed.grads()
     }
 }

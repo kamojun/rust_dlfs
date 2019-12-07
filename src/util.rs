@@ -53,6 +53,26 @@ pub fn create_contexts_target(
         .collect::<Vec<Vec<usize>>>();
     (contexts, target)
 }
+pub fn create_contexts_target_arr(
+    corpus: &Vec<usize>,
+    window_size: usize,
+) -> (Array2<usize>, Array1<usize>) {
+    let m = window_size * 2 + 1; // 各単語のコンテキストの長さ(その単語を含む)
+    let n = match corpus.len().checked_sub(window_size * 2) {
+        // コンテキストを持つ単語の長さ
+        Some(x) => x,
+        None => {
+            panic!("window_size too large for the corpus!");
+        }
+    };
+    let contexts_target = Array2::from_shape_fn((n, m), |(i, j)| corpus[i + j]);
+    let target = contexts_target.index_axis(Axis(1), window_size).to_owned();
+    let context_window: Vec<usize> = (0..m).filter(|i| *i != window_size).collect();
+    let context_window: Vec<usize> = (0..m).collect();
+
+    let contexts = pickup(&contexts_target, Axis(1), &context_window[..]);
+    (contexts, target)
+}
 pub fn convert_one_hot_1v(corpus: &Vec<usize>, vocab_size: usize) -> Vec<Vec<i32>> {
     corpus
         .iter()
