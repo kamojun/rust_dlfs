@@ -15,6 +15,7 @@ serde = "1.0.102"
 itertools = "0.8.1"
 ndarray-stats = "0.3"
 num-traits = "0.2.10"
+counter = "0.4.3"
 # gnuplot = "0.0.32"
 
 [lib]

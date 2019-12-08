@@ -6,7 +6,7 @@ use crate::model::Model;
 use crate::types::{Arr1d, Arr2d, Arr3d};
 use crate::util::*;
 use itertools::izip;
-use ndarray::{Array, Array1, Array2, Array3, Axis, Ix2};
+use ndarray::{s, Array, Array1, Array2, Array3, Axis, Ix2};
 
 pub struct EmbeddingDot {
     /// 単語の表現ベクトルの束(2次元行列)を持っていて、基本的にただそこから抜き出してくるだけ
@@ -73,18 +73,37 @@ impl EmbeddingDot2d {
     }
 }
 
+use rand::distributions::Distribution;
+use rand::distributions::WeightedIndex;
+use rand::prelude::thread_rng;
 struct Sampler {
     sample_size: usize,
+    distribution: WeightedIndex<f32>,
 }
 impl Sampler {
-    fn sampling(&self, target: Array1<usize>) -> (Array2<usize>, Array2<bool>) {
-        unimplemented!();
+    /// 正解であるtargetに、negativeサンプリングを加える
+    fn negative_sampling(&self, target: Array1<usize>) -> (Array2<usize>, Array2<bool>) {
+        let mut rng = thread_rng();
+        let batch_size = target.len();
+        let mut arr = Array2::zeros((batch_size, self.sample_size + 1));
+        arr.index_axis_mut(Axis(1), 0).assign(&target);
+        let ns = Array2::from_shape_fn((batch_size, self.sample_size), |_| {
+            self.distribution.sample(&mut rng)
+        });
+        arr.slice_mut(s![.., 1..]).assign(&ns);
+        let ans = Array::from_shape_fn(arr.dim(), |(i, j)| arr[[i, j]] == target[i]);
+        (arr, ans)
     }
-    fn new() -> Self {
-        unimplemented!();
+    fn new(sample_size: usize, distribution: WeightedIndex<f32>) -> Self {
+        Self {
+            sample_size,
+            distribution,
+        }
     }
 }
-
+pub trait InitWithSampler {
+    fn new(ws: &[Arr2d], sample_size: usize, distribution: WeightedIndex<f32>) -> Self;
+}
 pub struct NegativeSamplingLoss {
     sample_size: usize,
     sampler: Sampler,
@@ -94,22 +113,14 @@ pub struct NegativeSamplingLoss {
 impl LayerWithLoss for NegativeSamplingLoss {
     fn forward2(&mut self, input: Arr2d, target: Array1<usize>) -> f32 {
         // let batch_size = target.shape()[0];
-        let (target_and_negative_sample, label) = self.sampler.sampling(target);
+        let (target_and_negative_sample, label) = self.sampler.negative_sampling(target);
         let out = self.embed.forward(input, target_and_negative_sample);
         self.loss_layer.forward(out, label)
     }
-    fn backward(&mut self, unused: usize) -> Arr2d {
+    fn backward(&mut self) -> Arr2d {
         let mut dx = self.loss_layer.backward();
         dx = self.embed.backward(dx);
         dx
-    }
-    fn new(ws: &[Arr2d]) -> Self {
-        Self {
-            sample_size: 0,
-            sampler: Sampler::new(),
-            loss_layer: Default::default(),
-            embed: EmbeddingDot2d::new(ws[0].clone()),
-        }
     }
     fn params(&mut self) -> Vec<&mut Arr2d> {
         self.embed.params()
@@ -117,4 +128,25 @@ impl LayerWithLoss for NegativeSamplingLoss {
     fn grads(&self) -> Vec<Arr2d> {
         self.embed.grads()
     }
+}
+
+impl NegativeSamplingLoss {
+    pub fn new(w: Arr2d, sample_size: usize, distribution: WeightedIndex<f32>) -> Self {
+        Self {
+            sample_size,
+            sampler: Sampler::new(sample_size, distribution),
+            loss_layer: Default::default(),
+            embed: EmbeddingDot2d::new(w),
+        }
+    }
+}
+
+use counter::Counter;
+pub fn get_distribution(corpus: &Vec<usize>, power: Option<f32>) -> WeightedIndex<f32> {
+    let id_counts: Counter<_> = corpus.iter().cloned().collect();
+    let mut v: Vec<_> = id_counts.into_map().into_iter().collect();
+    v.sort();
+    let power = power.unwrap_or(1.0);
+    let weights: Vec<_> = v.into_iter().map(|p| p.1 as f32 * power).collect();
+    WeightedIndex::new(&weights).unwrap()
 }

@@ -17,8 +17,8 @@ pub trait LayerWithLoss {
     }
     /// (バッチ次元、出力次元)で伝播してきた誤差doutに対し、(バッチ次元、入力次元)
     /// の誤差を後ろに渡す。
-    fn backward(&mut self, batch_size: usize) -> Arr2d;
-    fn new(wvec: &[Arr2d]) -> Self;
+    fn backward(&mut self) -> Arr2d;
+    // fn new(wvec: &[Arr2d]) -> Self;
     fn params(&mut self) -> Vec<&mut Arr2d> {
         vec![]
     }
@@ -35,6 +35,7 @@ pub struct SoftMaxWithLoss {
     // out: Arr1d,
     /// 教師ラベル
     target: Array1<usize>,
+    batch_size: usize,
 }
 impl SoftMaxWithLoss {}
 impl LayerWithLoss for SoftMaxWithLoss {
@@ -44,20 +45,18 @@ impl LayerWithLoss for SoftMaxWithLoss {
     fn forward2(&mut self, input: Arr2d, target: Array1<usize>) -> f32 {
         self.pred = self.predict(input);
         self.target = target;
+        self.batch_size = self.target.len();
         cross_entropy_error_target(&self.pred, &self.target)
     }
-    fn backward(&mut self, batch_size: usize) -> Arr2d {
+    fn backward(&mut self) -> Arr2d {
         // let batch_size = dout.Arr1d; // Arr2dッチで平均されるので、各バッチの寄与は1/batch_size か?
-        let dout: Arr2d = Array::from_elem((batch_size, 1), 1.0 / batch_size as f32);
+        // let dout: Arr2d = Array::from_elem((batch_size, 1), 1.0 / batch_size as f32);
         let mut dx = self.pred.clone(); // これを使う
         for (i, t) in self.target.iter().enumerate() {
             dx[[i, *t]] -= 1.0; // 誤差(正解ラベルでの確率は1なのでそれを引く)
         }
         // dx * dout / batch_size
-        dx * dout // doutはバッチ次元なので、(バッチサイズ, 1)にしてdxとかけれるようにする。
-    }
-    fn new(wvec: &[Arr2d]) -> Self {
-        Default::default()
+        dx * (self.batch_size as f32) // doutはバッチ次元なので、(バッチサイズ, 1)にしてdxとかけれるようにする。
     }
 }
 
@@ -66,6 +65,7 @@ pub struct SigmodWithLoss<D: Dimension> {
     // input: Arr2d,
     y: Array<f32, D>,
     target: Array<bool, D>,
+    batch_sample_size: usize,
 }
 impl<D: Dimension> SigmodWithLoss<D> {
     // targetは正解ラベル
@@ -80,10 +80,10 @@ impl<D: Dimension> SigmodWithLoss<D> {
             }
         }
         self.target = target;
+        self.batch_sample_size = self.y.len();
         loss.mean().unwrap()
     }
     pub fn backward(&mut self) -> Array<f32, D> {
-        let batch_sample_size = self.y.len() as f32;
-        (&self.y - &self.target.mapv(|b| if b { 1.0 } else { 0.0 })) / batch_sample_size
+        (&self.y - &self.target.mapv(|b| if b { 1.0 } else { 0.0 })) / self.batch_sample_size as f32
     }
 }

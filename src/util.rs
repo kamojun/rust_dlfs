@@ -184,19 +184,20 @@ pub fn pickup1<T: Zero + Copy, D: RemoveAxis>(
     a
 }
 
-pub trait Len {
-    fn len(&self) -> usize;
-}
-impl Len for ArrayView1<'_, usize> {
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
-impl Len for &[usize] {
-    fn len(&self) -> usize {
-        self.len()
-    }
-}
+// もう使ってないのに、overrideしてしまったからか、何度も文句を言われる
+// pub trait Len {
+//     fn len(&self) -> usize;
+// }
+// impl Len for ArrayView1<'_, usize> {
+//     fn len(&self) -> usize {
+//         self.len()
+//     }
+// }
+// impl Len for &[usize] {
+//     fn len(&self) -> usize {
+//         self.len()
+//     }
+// }
 
 // IntoIterも traitにしようとしたが...。
 // pub trait LenIter<'a> {
@@ -227,28 +228,28 @@ impl Len for &[usize] {
 /// idxとして、&[T]は行けるのに、&[T; N](N=1,2,3...)はダメと言われる。
 /// idx: &[T]にしてたら&[T; 3] (idx = &[1,2,3]とか)問題なく受け入れるのに、なんでだろう。
 /// これ使うと結局stack-over-flowと言われた。なんでだろ。
-pub fn pickup0<'a, T: Zero + Copy, D: RemoveAxis>(
-    x: &Array<T, D>,
-    axis: Axis,
-    idx: impl IntoIterator<Item = &'a usize> + Len,
-    // idx: LenIter<'a>,
-) -> Array<T, D> {
-    assert!(
-        x.shape()[axis.0] >= idx.len(),
-        "KAMO: sorry, haven't implemented yet"
-    );
-    // 同じ型で、一番外側の次元数だけidx.len()にしたいのだけど、現状では小さくすることしかできない。
-    let mut a = x
-        .slice_axis(axis, Slice::from(0..idx.len()))
-        .mapv(|_| T::zero());
-    // .to_owned();  // これならT::zero()は不要
-    for (i, j) in idx.into_iter().enumerate() {
-        let mut row = a.index_axis_mut(axis, i); // 移動先
-        let base = &x.index_axis(axis, *j); // 移動元
-        row.assign(base);
-    }
-    a
-}
+// pub fn pickup0<'a, T: Zero + Copy, D: RemoveAxis>(
+//     x: &Array<T, D>,
+//     axis: Axis,
+//     idx: impl IntoIterator<Item = &'a usize> + Len,
+//     // idx: LenIter<'a>,
+// ) -> Array<T, D> {
+//     assert!(
+//         x.shape()[axis.0] >= idx.len(),
+//         "KAMO: sorry, haven't implemented yet"
+//     );
+//     // 同じ型で、一番外側の次元数だけidx.len()にしたいのだけど、現状では小さくすることしかできない。
+//     let mut a = x
+//         .slice_axis(axis, Slice::from(0..idx.len()))
+//         .mapv(|_| T::zero());
+//     // .to_owned();  // これならT::zero()は不要
+//     for (i, j) in idx.into_iter().enumerate() {
+//         let mut row = a.index_axis_mut(axis, i); // 移動先
+//         let base = &x.index_axis(axis, *j); // 移動元
+//         row.assign(base);
+//     }
+//     a
+// }
 /// 元の次元より大きくもできる
 fn pickup2<T: Copy + Zero, D: RemoveAxis>(
     x: &Array<T, D>,
@@ -297,13 +298,12 @@ pub fn pickup_old<T: Copy, D: Dimension>(x: &Array<T, D>, idx: &[usize]) -> Arra
     }
 }
 
-#[test]
 pub fn test_pickup() {
     let arr = Array::from_shape_fn((3, 4), |(i, j)| i * j);
     putsl!(arr);
     // putsl!(pickup0(&arr, Axis(0), &[1, 1, 1]));   // => エラー!!なんじゃそりゃ
     let idx: &[_] = &[1, 2, 3];
-    putsl!(pickup0(&arr, Axis(0), idx)); // これは行ける。型指定したので
-    putsl!(pickup0(&arr, Axis(0), &[1, 1, 1][..])); // 明示的にsliceにしたのでok
+    // putsl!(pickup0(&arr, Axis(0), idx)); // これは行ける。型指定したので
+    // putsl!(pickup0(&arr, Axis(0), &[1, 1, 1][..])); // 明示的にsliceにしたのでok
     putsl!(pickup(&arr, Axis(0), &[1, 1, 1, 2, 2])); // そもそも引数が&[usize]なので、型推論される
 }

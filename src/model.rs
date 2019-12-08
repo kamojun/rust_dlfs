@@ -10,7 +10,6 @@ use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
 
 pub trait Model2 {
-    fn new(ws: &[Arr2d]) -> Self;
     fn forward<D: Dimension>(&mut self, input: Array<usize, D>, target: Array1<usize>) -> f32 {
         unimplemented!();
     }
@@ -22,6 +21,7 @@ pub trait Model2 {
         vec![]
     }
 }
+
 pub struct CBOW {
     in_layer: Embedding,
     loss_layer: NegativeSamplingLoss,
@@ -35,7 +35,7 @@ impl Model2 for CBOW {
         self.loss_layer.forward2(h, target)
     }
     fn backward(&mut self) {
-        let dx = self.loss_layer.backward(1); // batch_sizeは使わない
+        let dx = self.loss_layer.backward(); // batch_sizeは使わない
         self.in_layer.backward(dx);
     }
     fn params(&mut self) -> Vec<&mut Arr2d> {
@@ -44,10 +44,15 @@ impl Model2 for CBOW {
     fn grads(&self) -> Vec<Arr2d> {
         concat(vec![self.in_layer.grads(), self.loss_layer.grads()])
     }
-    fn new(ws: &[Arr2d]) -> Self {
+}
+
+use rand::distributions::Distribution;
+use rand::distributions::WeightedIndex;
+impl InitWithSampler for CBOW {
+    fn new(ws: &[Arr2d], sample_size: usize, distribution: WeightedIndex<f32>) -> Self {
         Self {
             in_layer: Embedding::new(ws[0].clone()),
-            loss_layer: NegativeSamplingLoss::new(&ws[1..]),
+            loss_layer: NegativeSamplingLoss::new(ws[1].clone(), sample_size, distribution),
         }
     }
 }
@@ -79,7 +84,7 @@ pub trait Model {
     fn grads2d(&self) -> Vec<Arr2d>;
 }
 
-pub struct TwoLayerNet<L: LayerWithLoss> {
+pub struct TwoLayerNet<L: LayerWithLoss + Default> {
     input_size: usize,
     hidden_size: usize,
     output_size: usize,
@@ -87,7 +92,7 @@ pub struct TwoLayerNet<L: LayerWithLoss> {
     // loss_layer: Box<dyn LayerWithLoss>,
     loss_layer: L,
 }
-impl<L: LayerWithLoss> TwoLayerNet<L> {
+impl<L: LayerWithLoss + Default> TwoLayerNet<L> {
     pub fn new(input_size: usize, hidden_size: usize, output_size: usize) -> Self {
         const PARAM_INIT_SCALE: f32 = 1.0; // これ変えると微妙に学習効率変わるのだが、よくわからん
         let w1 = randarr2d(input_size, hidden_size) * PARAM_INIT_SCALE;
@@ -103,11 +108,11 @@ impl<L: LayerWithLoss> TwoLayerNet<L> {
             hidden_size,
             output_size,
             layers,
-            loss_layer: L::new(&[]),
+            loss_layer: L::default(),
         }
     }
 }
-impl<L: LayerWithLoss> Model for TwoLayerNet<L> {
+impl<L: LayerWithLoss + Default> Model for TwoLayerNet<L> {
     fn predict(&mut self, mut x: Arr2d) -> Arr2d {
         for layer in self.layers.iter_mut() {
             x = layer.forward(x);
@@ -130,7 +135,7 @@ impl<L: LayerWithLoss> Model for TwoLayerNet<L> {
         self.loss_layer.forward(x, &t)
     }
     fn backward(&mut self, batch_size: usize) {
-        let mut dx = self.loss_layer.backward(batch_size);
+        let mut dx = self.loss_layer.backward();
         for layer in self.layers.iter_mut().rev() {
             dx = layer.backward(dx);
         }
@@ -149,7 +154,7 @@ impl<L: LayerWithLoss> Model for TwoLayerNet<L> {
     }
 }
 
-pub struct SimpleCBOW<L: LayerWithLoss> {
+pub struct SimpleCBOW<L: LayerWithLoss + Default> {
     vocab_size: usize,
     hidden_size: usize,
     // layers: [Box<dyn Layer>; 3],
@@ -158,7 +163,7 @@ pub struct SimpleCBOW<L: LayerWithLoss> {
     in_layer_2: MatMul,
     out_layer: MatMul,
 }
-impl<L: LayerWithLoss> SimpleCBOW<L> {
+impl<L: LayerWithLoss + Default> SimpleCBOW<L> {
     pub fn new(vocab_size: usize, hidden_size: usize) -> Self {
         let (_v, _h) = (vocab_size, hidden_size);
         let scale = Some(0.01);
@@ -169,7 +174,7 @@ impl<L: LayerWithLoss> SimpleCBOW<L> {
         Self {
             vocab_size,
             hidden_size,
-            loss_layer: L::new(&[]),
+            loss_layer: L::default(),
             in_layer_1,
             in_layer_2,
             out_layer,
@@ -186,7 +191,7 @@ impl<L: LayerWithLoss> SimpleCBOW<L> {
         self.in_layer_1.w.clone()
     }
 }
-impl<L: LayerWithLoss> Model for SimpleCBOW<L> {
+impl<L: LayerWithLoss + Default> Model for SimpleCBOW<L> {
     fn forwardx<D: Dimension>(&mut self, contexts: Array<f32, D>, target: Arr2d) -> f32 {
         let x = contexts
             .into_dimensionality::<Ix3>()
@@ -198,7 +203,7 @@ impl<L: LayerWithLoss> Model for SimpleCBOW<L> {
         self.loss_layer.forward(score, &target)
     }
     fn backward(&mut self, batch_size: usize) {
-        let mut dx = self.loss_layer.backward(batch_size);
+        let mut dx = self.loss_layer.backward();
         dx = self.out_layer.backward(dx);
         dx *= 0.5; // in1, in2の入力を平均する設定になっているためforwardx<D>参照
         self.in_layer_1.backward(dx.clone());

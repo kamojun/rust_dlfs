@@ -28,7 +28,7 @@ impl<M: Model2, T: Optimizer> Trainer2<M, T> {
         t: Array1<usize>,   // 分類学習
         max_epoch: usize,
         batch_size: usize,
-        max_grad: Option<f32>,
+        // max_grad: Option<f32>,
         eval_interval: Option<usize>,
     ) {
         let (data_len, input_dim) = match x.shape() {
@@ -39,7 +39,7 @@ impl<M: Model2, T: Optimizer> Trainer2<M, T> {
         let max_iters = data_len / batch_size;
         self.loss_list = Vec::<f32>::new();
         let eval_interval = eval_interval.unwrap_or(max_iters);
-
+        0;
         for epoch in 1..=max_epoch {
             let idx = random_index(data_len);
             //　一定回数イテレーションするたびに平均の損失を記録する
