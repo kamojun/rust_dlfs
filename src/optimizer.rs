@@ -5,13 +5,18 @@ use ndarray::{arr1, Array, Array1, Dimension, Ix1};
 
 pub trait Optimizer {
     // fn update<'a, T: Math<'a>>(&self, mut params: Vec<&mut T>, grad: Vec<&'a T>) {}
-    fn update1d(&mut self, mut params: Vec<&mut Arr1d>, grad: Vec<Arr1d>) {}
-    fn update2d(&mut self, mut params: Vec<&mut Arr2d>, grad: Vec<Arr2d>) {}
+    fn update1d(&mut self, mut params: Vec<&mut Arr1d>, grads: Vec<Arr1d>) {
+        self.update(params, grads);
+    }
+    fn update2d(&mut self, mut params: Vec<&mut Arr2d>, grads: Vec<Arr2d>) {
+        self.update(params, grads);
+    }
     fn update<D: Dimension>(
         &mut self,
         mut params: Vec<&mut Array<f32, D>>,
-        grad: Vec<Array<f32, D>>,
+        grads: Vec<Array<f32, D>>,
     ) {
+        unimplemented!()
     }
 }
 
@@ -19,12 +24,6 @@ pub struct SGD {
     pub lr: f32,
 }
 impl Optimizer for SGD {
-    fn update1d(&mut self, mut params: Vec<&mut Arr1d>, grad: Vec<Arr1d>) {
-        self.update(params, grad);
-    }
-    fn update2d(&mut self, mut params: Vec<&mut Arr2d>, grad: Vec<Arr2d>) {
-        self.update(params, grad);
-    }
     fn update<D: Dimension>(
         &mut self,
         mut params: Vec<&mut Array<f32, D>>,
@@ -47,6 +46,7 @@ impl Optimizer for SGD {
 //     }
 // }
 
+#[derive(Default)]
 pub struct AdaGrad {
     lr: f32,
     h1d: Vec<Arr1d>,
@@ -70,8 +70,7 @@ impl AdaGrad {
     pub fn new(lr: f32) -> Self {
         AdaGrad {
             lr,
-            h1d: Vec::new(),
-            h2d: Vec::new(),
+            ..AdaGrad::default()
         }
     }
 }
@@ -97,6 +96,7 @@ impl Optimizer for AdaGrad {
     }
 }
 
+#[derive(Default)]
 pub struct Adam {
     lr: f32,
     beta1: f32,
@@ -108,20 +108,16 @@ pub struct Adam {
     v1d: Vec<Arr1d>,
 }
 impl Adam {
+    /// use default lr=0.001, beta1=0.9, beta2=0.999
     pub fn new(lr: f32, beta1: f32, beta2: f32) -> Self {
-        // use default lr=0.001, beta1=0.9, beta2=0.999
         Adam {
             lr,
             beta1,
             beta2,
-            iter: 0,
-            m2d: vec![],
-            v2d: vec![],
-            m1d: vec![],
-            v1d: vec![],
+            ..Adam::default()
         }
     }
-    fn update<D: Dimension>(
+    fn updatex<D: Dimension>(
         mut params: Vec<&mut Array<f32, D>>,
         grad: Vec<Array<f32, D>>,
         m: &mut Vec<Array<f32, D>>,
@@ -130,35 +126,33 @@ impl Adam {
     } // これを使ってDRYしたかったが...
 }
 impl Optimizer for Adam {
-    fn update2d(&mut self, mut params: Vec<&mut Arr2d>, grad: Vec<Arr2d>) {
+    fn update2d(&mut self, mut params: Vec<&mut Arr2d>, grads: Vec<Arr2d>) {
         if self.m2d.len() == 0 {
-            self.m2d = grad.iter().map(|g| Array::zeros(g.dim())).collect();
-            self.v2d = grad.iter().map(|g| Array::zeros(g.dim())).collect();
+            self.m2d = grads.iter().map(|g| Array::zeros(g.dim())).collect();
+            self.v2d = grads.iter().map(|g| Array::zeros(g.dim())).collect();
         }
         self.iter += 1;
         let lr_t = self.lr * (1.0 - self.beta2.powi(self.iter)).sqrt()
             / (1.0 - self.beta1.powi(self.iter));
         for i in 0..params.len() {
-            self.m2d[i] += &((&grad[i] - &self.m2d[i]) * (1.0 - self.beta1));
-            self.v2d[i] += &((&grad[i].mapv(|x| x.powi(2)) - &self.m2d[i]) * (1.0 - self.beta1));
-            *params[i] -= &(&grad[i] * lr_t / (self.m2d[i].mapv(f32::sqrt) + 1e-7));
+            self.m2d[i] += &((&grads[i] - &self.m2d[i]) * (1.0 - self.beta1));
+            self.v2d[i] += &((&grads[i].mapv(|x| x.powi(2)) - &self.v2d[i]) * (1.0 - self.beta2));
+            *params[i] -= &(&self.m2d[i] * lr_t / (self.v2d[i].mapv(f32::sqrt) + 1e-7));
         }
-        // for (p,g,m,v ) in izip!(params.iter_mut(), grad.iter(), self.m2d.iter_mut(), self.v2d.iter_mut()){}
     }
-    fn update1d(&mut self, mut params: Vec<&mut Arr1d>, grad: Vec<Arr1d>) {
+    fn update1d(&mut self, mut params: Vec<&mut Arr1d>, grads: Vec<Arr1d>) {
         if self.m1d.len() == 0 {
-            self.m1d = grad.iter().map(|g| Array::zeros(g.dim())).collect();
-            self.v1d = grad.iter().map(|g| Array::zeros(g.dim())).collect();
+            self.m1d = grads.iter().map(|g| Array::zeros(g.dim())).collect();
+            self.v1d = grads.iter().map(|g| Array::zeros(g.dim())).collect();
         }
         self.iter += 1;
         let lr_t = self.lr * (1.0 - self.beta2.powi(self.iter)).sqrt()
             / (1.0 - self.beta1.powi(self.iter));
         for i in 0..params.len() {
-            self.m1d[i] += &((&grad[i] - &self.m1d[i]) * (1.0 - self.beta1));
-            self.v1d[i] += &((&grad[i].mapv(|x| x.powi(2)) - &self.m1d[i]) * (1.0 - self.beta1));
-            *params[i] -= &(&grad[i] * lr_t / (self.m1d[i].mapv(f32::sqrt) + 1e-7));
+            self.m1d[i] += &((&grads[i] - &self.m1d[i]) * (1.0 - self.beta1));
+            self.v1d[i] += &((&grads[i].mapv(|x| x.powi(2)) - &self.v1d[i]) * (1.0 - self.beta2));
+            *params[i] -= &(&self.m1d[i] * lr_t / (self.v1d[i].mapv(f32::sqrt) + 1e-7));
         }
-        // for (p,g,m,v ) in izip!(params.iter_mut(), grad.iter(), self.m1d.iter_mut(), self.v1d.iter_mut()){}
     }
 }
 

@@ -68,8 +68,6 @@ pub fn create_contexts_target_arr(
     let contexts_target = Array2::from_shape_fn((n, m), |(i, j)| corpus[i + j]);
     let target = contexts_target.index_axis(Axis(1), window_size).to_owned();
     let context_window: Vec<usize> = (0..m).filter(|i| *i != window_size).collect();
-    let context_window: Vec<usize> = (0..m).collect();
-
     let contexts = pickup(&contexts_target, Axis(1), &context_window[..]);
     (contexts, target)
 }

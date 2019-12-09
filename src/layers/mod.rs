@@ -250,7 +250,7 @@ impl Embedding2d {
         // バッチ方向に回す
         for (_o, _x) in dout.outer_iter().zip(self.idx.outer_iter()) {
             for (__o, __x) in _o.outer_iter().zip(_x.iter()) {
-                let mut row = self.dw.index_axis_mut(Axis(0), *__x);
+                let mut row = self.dw.index_axis_mut(Axis(0), *__x); // TODO ADDASIGN?
                 row += &__o;
             }
         }

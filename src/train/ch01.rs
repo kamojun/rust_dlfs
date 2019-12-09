@@ -23,8 +23,8 @@ pub fn train2() {
 
     let mut model = TwoLayerNet::<SoftMaxWithLoss>::new(2, HIDDEN_SIZE, 3);
     // let mut optimizer = SGD { lr: 1.0 };
-    let mut optimizer = AdaGrad::new(1.0);
-    // let mut optimizer = Adam::new(0.001, 0.9, 0.999);
+    // let mut optimizer = AdaGrad::new(1.0);
+    let mut optimizer = Adam::new(0.001, 0.9, 0.999);
     let mut trainer = Trainer::new(model, optimizer);
     trainer.fit(
         data,

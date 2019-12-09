@@ -44,14 +44,14 @@ impl EmbeddingDot2d {
     fn forward(&mut self, input: Arr2d, idx: Array2<usize>) -> Arr2d {
         let (batch_size, channel_num) = input.dim();
         self.target_w = self.embed.forward(idx); // (bs, sn, ch)
-        self.input = input.into_shape((batch_size, 1, channel_num)).unwrap();
+        self.input = input.insert_axis(Axis(1));
         let out = (&self.target_w * &self.input).sum_axis(Axis(2)); // 要するに各列で内積を取る
         out
     }
     fn backward(&mut self, dout: Arr2d) -> Arr2d {
-        let (batch_size, sample_num) = dout.dim();
         let dout = dout.insert_axis(Axis(2));
         // let dtarget_w = self.input * dout; // target_wの方は、inputから勾配を得る
+        // castできないので仕方なく
         let dtarget_w = Array::from_shape_fn(self.target_w.dim(), |(i, j, k)| {
             self.input[[i, 0, k]] * dout[[i, j, 0]]
         });

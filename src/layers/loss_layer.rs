@@ -35,7 +35,6 @@ pub struct SoftMaxWithLoss {
     // out: Arr1d,
     /// 教師ラベル
     target: Array1<usize>,
-    batch_size: usize,
 }
 impl SoftMaxWithLoss {}
 impl LayerWithLoss for SoftMaxWithLoss {
@@ -45,7 +44,6 @@ impl LayerWithLoss for SoftMaxWithLoss {
     fn forward2(&mut self, input: Arr2d, target: Array1<usize>) -> f32 {
         self.pred = self.predict(input);
         self.target = target;
-        self.batch_size = self.target.len();
         cross_entropy_error_target(&self.pred, &self.target)
     }
     fn backward(&mut self) -> Arr2d {
@@ -55,8 +53,8 @@ impl LayerWithLoss for SoftMaxWithLoss {
         for (i, t) in self.target.iter().enumerate() {
             dx[[i, *t]] -= 1.0; // 誤差(正解ラベルでの確率は1なのでそれを引く)
         }
-        // dx * dout / batch_size
-        dx * (self.batch_size as f32) // doutはバッチ次元なので、(バッチサイズ, 1)にしてdxとかけれるようにする。
+        let batch_size = dx.dim().0 as f32;
+        dx / batch_size // doutはバッチ次元なので、(バッチサイズ, 1)にしてdxとかけれるようにする。
     }
 }
 

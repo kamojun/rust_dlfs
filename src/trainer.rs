@@ -39,7 +39,6 @@ impl<M: Model2, T: Optimizer> Trainer2<M, T> {
         let max_iters = data_len / batch_size;
         self.loss_list = Vec::<f32>::new();
         let eval_interval = eval_interval.unwrap_or(max_iters);
-        0;
         for epoch in 1..=max_epoch {
             let idx = random_index(data_len);
             //　一定回数イテレーションするたびに平均の損失を記録する
@@ -52,7 +51,7 @@ impl<M: Model2, T: Optimizer> Trainer2<M, T> {
                 let loss = self.model.forward(batch_data, batch_target);
                 self.model.backward();
                 let grads = self.model.grads();
-                self.optimizer.update(self.model.params(), grads);
+                self.optimizer.update2d(self.model.params(), grads);
                 total_loss += loss; // 1バッチごとに損失を加算していく
                 loss_count += 1; // バッチ回数を記録
                 if iters % eval_interval == 0 {
@@ -69,7 +68,15 @@ impl<M: Model2, T: Optimizer> Trainer2<M, T> {
         }
     }
     pub fn show_loss(&self) {
-        println!("{:?}", self.loss_list)
+        println!(
+            "{:?}",
+            // self.loss_list.iter().step_by(100).collect::<Vec<_>>()
+            self.loss_list
+        )
+    }
+
+    pub fn save_params(&mut self) {
+        for p in self.model.params() {}
     }
 }
 

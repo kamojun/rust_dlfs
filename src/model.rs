@@ -136,6 +136,7 @@ impl<L: LayerWithLoss + Default> Model for TwoLayerNet<L> {
     }
     fn backward(&mut self, batch_size: usize) {
         let mut dx = self.loss_layer.backward();
+        0;
         for layer in self.layers.iter_mut().rev() {
             dx = layer.backward(dx);
         }
