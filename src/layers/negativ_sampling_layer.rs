@@ -68,6 +68,9 @@ impl EmbeddingDot2d {
     fn params(&mut self) -> Vec<&mut Arr2d> {
         self.embed.params()
     }
+    fn params_immut(&self) -> Vec<&Arr2d> {
+        self.embed.params_immut()
+    }
     fn grads(&self) -> Vec<Arr2d> {
         self.embed.grads()
     }
@@ -138,6 +141,9 @@ impl NegativeSamplingLoss {
             loss_layer: Default::default(),
             embed: EmbeddingDot2d::new(w),
         }
+    }
+    pub fn params_immut(&self) -> Vec<&Arr2d> {
+        self.embed.params_immut()
     }
 }
 

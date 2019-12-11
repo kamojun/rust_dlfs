@@ -17,6 +17,9 @@ pub trait Model2 {
     fn params(&mut self) -> Vec<&mut Arr2d> {
         vec![]
     }
+    fn params_immut(&self) -> Vec<&Arr2d> {
+        vec![]
+    }
     fn grads(&self) -> Vec<Arr2d> {
         vec![]
     }
@@ -40,6 +43,12 @@ impl Model2 for CBOW {
     }
     fn params(&mut self) -> Vec<&mut Arr2d> {
         concat(vec![self.in_layer.params(), self.loss_layer.params()])
+    }
+    fn params_immut(&self) -> Vec<&Arr2d> {
+        concat(vec![
+            self.in_layer.params_immut(),
+            self.loss_layer.params_immut(),
+        ])
     }
     fn grads(&self) -> Vec<Arr2d> {
         concat(vec![self.in_layer.grads(), self.loss_layer.grads()])

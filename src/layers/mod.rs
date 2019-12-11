@@ -187,6 +187,9 @@ impl Embedding {
     pub fn params(&mut self) -> Vec<&mut Arr2d> {
         vec![&mut self.w]
     }
+    pub fn params_immut(&self) -> Vec<&Arr2d> {
+        vec![&self.w]
+    }
     pub fn grads(&self) -> Vec<Arr2d> {
         vec![self.dw.clone()]
     }
@@ -257,6 +260,9 @@ impl Embedding2d {
     }
     fn params(&mut self) -> Vec<&mut Arr2d> {
         vec![&mut self.w]
+    }
+    fn params_immut(&self) -> Vec<&Arr2d> {
+        vec![&self.w]
     }
     fn grads(&self) -> Vec<Arr2d> {
         vec![self.dw.clone()]

@@ -42,6 +42,10 @@ pub fn train(test_name: &str) {
     let mut trainer = Trainer2::new(model, optimizer);
     trainer.fit(contexts, target, MAX_EPOCH, BATCH_SIZE, Some(100));
     trainer.show_loss();
+    trainer
+        .model
+        .save_as_csv("trained/CBOW_model")
+        .expect("error!");
     // for (id, word_vec) in trainer.model.word_vecs().outer_iter().enumerate() {
     //     puts!(
     //         format!("{:<8}", id_to_word[&id]),

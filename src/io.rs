@@ -1,11 +1,49 @@
 extern crate csv;
-use csv::ReaderBuilder;
-use serde::Deserialize;
+use csv::{ReaderBuilder, WriterBuilder};
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io;
 // extern crate ndarray;
-// use ndarray::Array;
 use crate::types::Arr2d;
+use ndarray::Array2;
+
+pub trait Save<T> {
+    fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>>;
+}
+impl<T: Clone + Serialize> Save<T> for Array2<T> {
+    fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
+        let mut wtr = WriterBuilder::new()
+            .has_headers(false)
+            .from_path(filename)?;
+        // wtr.serialize()?;
+        for row in self.outer_iter() {
+            wtr.serialize(row.iter().cloned().collect::<Vec<T>>())?
+        }
+        wtr.flush()?;
+        Ok(())
+    }
+}
+use crate::model::{Model2, CBOW};
+impl Save<f32> for CBOW {
+    fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
+        let v = self.params_immut();
+        v[0].save_as_csv(&format!("{}{}", filename, "/w_in.csv"))?;
+        v[1].save_as_csv(&format!("{}{}", filename, "/w_out.csv"))?;
+        Ok(())
+    }
+}
+
+fn save_example(arr: Arr2d) -> Result<(), Box<dyn Error>> {
+    let mut wtr = WriterBuilder::new()
+        .has_headers(false)
+        .from_path("foo.csv")?;
+    // wtr.serialize()?;
+    for row in arr.outer_iter() {
+        wtr.serialize(row.iter().cloned().collect::<Vec<f32>>())?
+    }
+    wtr.flush()?;
+    Ok(())
+}
 
 pub fn csv_to_array(filename: &str) -> Result<Arr2d, Box<dyn Error>> {
     let mut rdr = ReaderBuilder::new()
@@ -46,9 +84,10 @@ mod tests {
     fn read_csv_test() {
         // let v: Vec<Vec<f32>> = read_csv("./data/spiral/x.csv").unwrap();
         // let arr = Array::from_shape_fn((v.len(), 2), |(i, j)| v[i][j]);
-        // let arr = csv_to_array("./data/spiral/t.csv").unwrap();
+        let arr = csv_to_array("./data/spiral/t.csv").unwrap();
         // println!("{:?}", arr);
-        let c = read_csv::<(usize, String)>("./data/ptb/id.csv").expect("error!!!");
-        putsl!(c);
+        // let c = read_csv::<(usize, String)>("./data/ptb/id.csv").expect("error!!!");
+        arr.save_as_csv("hoge.csv");
+        // putsl!(c);
     }
 }
