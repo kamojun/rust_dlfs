@@ -14,8 +14,8 @@ pub fn train2() {
     const BATCH_SIZE: usize = 30;
     const MAX_EPOCH: usize = 300;
 
-    let data = csv_to_array("./data/spiral/x.csv").expect("cannot read data csv");
-    let target = csv_to_array("./data/spiral/t.csv").expect("cannot read target csv");
+    let data = csv_to_array::<f32>("./data/spiral/x.csv").expect("cannot read data csv");
+    let target = csv_to_array::<f32>("./data/spiral/t.csv").expect("cannot read target csv");
     let data_len = data.shape()[0];
     assert_eq!(data_len, target.shape()[0]);
     println!("{:?}", target);

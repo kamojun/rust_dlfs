@@ -7,11 +7,11 @@ use crate::trainer::{Trainer, Trainer2};
 use crate::util::*;
 use std::collections::HashMap;
 
-pub fn train(test_name: &str) {
+pub fn train<O: Optimizer>(test_name: &str, optimizer: O) {
     const WINDOW_SIZE: usize = 5;
     const HIDDEN_SIZE: usize = 100;
-    const BATCH_SIZE: usize = 100;
-    const MAX_EPOCH: usize = 10;
+    const BATCH_SIZE: usize = 500;
+    const MAX_EPOCH: usize = 20;
     const SAMPLE_SIZE: usize = 5;
     const DISTRIBUTION_POWER: f32 = 0.75;
 
@@ -25,7 +25,8 @@ pub fn train(test_name: &str) {
         .into_iter()
         .collect();
     // let (corpus, word_to_id, id_to_word) = preprocess(text);
-    // let word_to_id: HashMap<String, usize> = id_to_word.iter().map(|(i,w)| (w.clone(), *i)).collect();
+    // let word_to_id: HashMap<String, usize> =
+    //     id_to_word.iter().map(|(i, w)| (w.clone(), *i)).collect();
     let vocab_size = id_to_word.len(); // 単語数
     putsl!(vocab_size);
     let (contexts, target) = create_contexts_target_arr(&corpus, WINDOW_SIZE);
@@ -36,15 +37,12 @@ pub fn train(test_name: &str) {
     let w_out = randarr2d(vocab_size, HIDDEN_SIZE);
     let distribution = get_distribution(&corpus, Some(DISTRIBUTION_POWER));
     let model = CBOW::new(&[w_in, w_out], SAMPLE_SIZE, distribution);
-    // let mut optimizer = SGD { lr: 1.0 };
-    let mut optimizer = AdaGrad::new(1.0);
-    // let mut optimizer = Adam::new(0.001, 0.9, 0.999);
     let mut trainer = Trainer2::new(model, optimizer);
     trainer.fit(contexts, target, MAX_EPOCH, BATCH_SIZE, Some(100));
     trainer.show_loss();
     trainer
         .model
-        .save_as_csv("trained/CBOW_model")
+        .save_as_csv(&format!("trained/{}", test_name))
         .expect("error!");
     // for (id, word_vec) in trainer.model.word_vecs().outer_iter().enumerate() {
     //     puts!(
@@ -53,8 +51,89 @@ pub fn train(test_name: &str) {
     //     );
     // }
 }
+use crate::functions::{cos, normalize};
+use crate::types::{Arr1d, Arr2d};
+use ndarray::Axis;
+
+/// ベクトルvと類似度の高いものを、wmから選び出す
+/// wmは規格化されているものを使うべし。
+/// vについては規格化されている必要ない(類似度が実数倍されるだけ)
+/// と思ったけど、類似度は-1〜1になっていた方がわかりやすいか。
+pub fn similarity(v: Arr1d, wm: &Arr2d) -> Vec<(usize, f32)> {
+    let v = normalize(v);
+    let mut sim: Vec<(usize, f32)> = wm.dot(&v).into_iter().cloned().enumerate().collect();
+    // let mut sim: Vec<(usize, f32)> = wm
+    //     .axis_iter(Axis(0))
+    //     .map(|w| v.dot(&w)) // 内積を取る
+    //     .enumerate()
+    //     .collect();
+    sim.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    sim
+}
+
+fn get_data(corpus_name: &str) -> (HashMap<usize, String>, HashMap<String, usize>) {
+    // let corpus = read_csv::<usize>("./data/ptb/corpus.csv").expect("error in reading corpus");
+    let id_to_word: HashMap<usize, String> = read_csv(&format!("./data/{}/id.csv", corpus_name))
+        .expect("error in reading id")
+        .into_iter()
+        .collect();
+    let word_to_id: HashMap<String, usize> =
+        id_to_word.iter().map(|(i, w)| (w.clone(), *i)).collect();
+    (id_to_word, word_to_id)
+}
+
+pub fn eval2(test_name: &str) {
+    let (id_to_word, word_to_id) = get_data("ptb");
+    let file_name = &format!("trained/{}/w_in.csv", test_name);
+    let word_vecs = csv_to_array::<f32>(file_name).expect("error reading csv");
+    let wm = normalize(word_vecs.clone());
+    let get_vec = |word: &str| {
+        let id = word_to_id[&word.to_string()];
+        word_vecs.index_axis(Axis(0), id).to_owned()
+    };
+    let word_list = [
+        ("man", "woman", "king"),
+        // ("take", "took", "go"),
+        // ("car", "cars", "child"),
+        ("woman", "man", "queen"),
+        ("king", "queen", "man"),
+        ("queen", "king", "woman"),
+    ];
+    for (a, b, c) in &word_list {
+        let av = get_vec(a);
+        let bv = get_vec(b);
+        let cv = get_vec(c); // <- この3行なんとかしたいな...
+        let sim = similarity(cv + bv - av, &wm);
+        println!("{}:{} = {}:?", a, b, c);
+        sim[1..10]
+            .iter()
+            .for_each(|x| println!("{}: {}", id_to_word[&x.0], x.1));
+        println!("");
+    }
+}
+
+pub fn eval(test_name: &str) {
+    let (id_to_word, word_to_id) = get_data("ptb");
+    let file_name = &format!("trained/{}/w_in.csv", test_name);
+    let w_in = normalize(csv_to_array::<f32>(file_name).expect("error reading csv"));
+    for w in &["you", "year", "car", "toyota"] {
+        let id = word_to_id[&w.to_string()];
+        let v = w_in.index_axis(Axis(0), id).to_owned();
+        let sim = similarity(v, &w_in);
+        puts!(w);
+        sim[1..10]
+            .iter()
+            .for_each(|x| println!("{}: {}", id_to_word[&x.0], x.1));
+        println!("");
+    }
+    // putsd!(normalize(w_in));
+}
 
 #[test]
 fn ch04_test() {
-    train("testname");
+    // train("CBOW_SGD", SGD { lr: 1.0 });
+    // train("CBOW_AdaGrad", AdaGrad::new(1.0));
+    // train("CBOW_Adam", Adam::new(0.001, 0.9, 0.999));
+    // eval("CBOW_AdaGrad");
+    eval("CBOW_AdaGrad/test2");
 }

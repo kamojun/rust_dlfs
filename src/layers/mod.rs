@@ -6,6 +6,7 @@ use itertools::izip;
 use ndarray::{Array, Array1, Array2, Array3, Axis, Dimension};
 pub mod loss_layer;
 pub mod negativ_sampling_layer;
+pub mod time_layers;
 
 /// ANNを構成するレイヤー。入力は一つのものを考える。
 pub trait Layer {

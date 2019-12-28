@@ -23,3 +23,7 @@ macro_rules! putsl {
         )*
     };
 }
+
+// macro_rules! mapp {
+
+// }
