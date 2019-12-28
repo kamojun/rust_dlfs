@@ -1,10 +1,83 @@
 use crate::io::*;
+use crate::model::rnn::*;
 use crate::model::*;
 use crate::optimizer::{AdaGrad, Optimizer, SGD};
 use crate::types::*;
 use crate::util::*;
 extern crate ndarray;
-use ndarray::{s, Array, Array1, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
+use ndarray::{s, Array, Array1, Array2, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
+
+pub struct RnnlmTrainer<R: Rnnlm, O: Optimizer> {
+    model: R,
+    optimizer: O,
+    time_idx: usize,
+    ppl_list: Vec<f32>,
+    eval_interval: usize,
+    current_epoch: usize,
+}
+impl<R: Rnnlm, O: Optimizer> RnnlmTrainer<R, O> {
+    pub fn new(model: R, optimizer: O) -> Self {
+        Self {
+            model,
+            optimizer,
+            time_idx: 0,
+            ppl_list: Vec::new(),
+            eval_interval: 0,
+            current_epoch: 0,
+        }
+    }
+    pub fn get_batch(&self, x: Arr2d, t: Arr2d, batch_size: usize, time_size: usize) {
+        let data_size = x.shape()[0];
+        let sample_num = data_size / time_size;
+    }
+    pub fn fit(
+        &mut self,
+        xs: Vec<usize>,
+        ts: Vec<usize>,
+        max_epoch: usize,
+        batch_size: usize,
+        time_size: usize,
+        eval_interval: usize,
+    ) {
+        let data_size = xs.len();
+        //  (batch_size, time_size)型のデータを学習に用いる
+        self.eval_interval = eval_interval;
+        let mut eval_loss = 0.0;
+
+        let time_shift = data_size / batch_size;
+        let max_iters = time_shift / time_size;
+        let xsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| xs[i * time_shift + j]);
+        let tsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| ts[i * time_shift + j]);
+
+        let start_time = std::time::Instant::now();
+        // 単純に同じデータで学習を繰り返す。
+        // ランダム性はない
+        for epoch in 1..=max_epoch {
+            let x_batches = xsa.axis_chunks_iter(Axis(1), max_iters);
+            let t_batches = tsa.axis_chunks_iter(Axis(1), max_iters);
+            for (iter, (batch_x, batch_t)) in x_batches.zip(t_batches).enumerate() {
+                eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
+                self.model.backward();
+                // self.model.update();
+                if iter % eval_interval == 0 {
+                    let ppl = (eval_loss / eval_interval as f32).exp();
+                    let elapsed_time = std::time::Instant::now() - start_time;
+                    println!(
+                        "|epoch {}| iter {}/{} | time {}[s] | perplexity {}",
+                        epoch,
+                        iter,
+                        max_iters,
+                        elapsed_time.as_secs(),
+                        ppl
+                    );
+                    self.ppl_list.push(ppl);
+                    // lossについてはeval_intervalごとの評価を行う。
+                    eval_loss = 0.0;
+                }
+            }
+        }
+    }
+}
 
 /// データ型をf32から、単語idのusizeにしようとしたら、どうしても
 /// Modelを作り替える必要があったので

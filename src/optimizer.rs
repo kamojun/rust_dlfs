@@ -162,7 +162,6 @@ use std::ops::{Mul, SubAssign};
 pub trait Math<'a>: 'a + Sized + Clone + Mul<f32, Output = Self> + SubAssign<&'a Self> {}
 impl Math<'_> for Arr1d {}
 
-#[test]
 fn main() {
     let s = SGD { lr: 0.02 };
     let mut a = arr1(&[1.0]);

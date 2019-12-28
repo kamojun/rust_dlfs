@@ -8,6 +8,7 @@ use itertools::concat;
 use ndarray::{Array, Array1, Axis, Dimension, Ix2, Ix3};
 use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
+pub mod rnn;
 
 pub trait Model2 {
     fn forward<D: Dimension>(&mut self, input: Array<usize, D>, target: Array1<usize>) -> f32 {
