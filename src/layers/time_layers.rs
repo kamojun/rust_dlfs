@@ -9,6 +9,9 @@ struct Cache {
     h_next: Arr2d,
 }
 
+/// 外部入力 x: (b, c), wx: (c, h)
+/// 相互入出力 h: (b, h), wh: (h, h)
+/// 上位のTimeRNNではこれがtime_size個存在する
 pub struct _RNN<'a> {
     _wx: &'a P1<Arr2d>,
     _wh: &'a P1<Arr2d>,
@@ -27,6 +30,7 @@ impl<'a> _RNN<'a> {
         };
         h_next
     }
+    /// dx: (b, c)とdh_prev: (b, h)を返す
     pub fn backward(&mut self, dh_next: Arr2d) -> (Arr2d, Arr2d) {
         let dt = dh_next * self.cache.h_next.mapv(|y| 1.0 - y * y);
         let dh_prev = dt.dot(&self._wh.p.t());
@@ -77,11 +81,11 @@ impl<'a> RNN<'a> {
     }
 }
 
+/// (b,c)の外部入力と、(b,h)の内部相互入力を受け、(b,h)を出力する
+/// time_sizeはlayerの数
 struct TimeRNN<'a> {
-    wx: P1<Arr2d>,
-    wh: P1<Arr2d>,
-    b: P1<Arr1d>,
     h: Arr2d,
+    dh: Arr2d,
     stateful: bool,
     batch_size: usize,
     time_size: usize,
@@ -91,33 +95,33 @@ struct TimeRNN<'a> {
 }
 
 impl<'a> TimeRNN<'a> {
-    // pub fn new(wx: Arr2d, wh: Arr2d, b: Arr1d, batch_size: usize, time_size: usize) -> Self {
-    //     let (channel_size, hidden_size) = wx.dim();
-    //     let wx = P1::new(wx);
-    //     let wh = P1::new(wh);
-    //     let b = P1::new(b);
-    //     let layers = Vec::new();
-    //     for _ in 0..time_size {
-    //         layers.push(_RNN {
-    //             _wx: &wx,
-    //             _wh: &wh,
-    //             _b: &b,
-    //             cache: Default::default(),
-    //         });
-    //     }
-    //     Self {
-    //         wx,
-    //         wh,
-    //         b,
-    //         layers,
-    //         h: Default::default(),
-    //         batch_size,
-    //         time_size,
-    //         channel_size,
-    //         hidden_size,
-    //         stateful: true,
-    //     }
-    // }
+    pub fn new(
+        wx: &'a P1<Arr2d>,
+        wh: &'a P1<Arr2d>,
+        b: &'a P1<Arr1d>,
+        batch_size: usize,
+        time_size: usize,
+    ) -> Self {
+        let (channel_size, hidden_size) = wx.p.dim();
+        let layers: Vec<_> = (0..time_size)
+            .map(|_| _RNN {
+                _wx: wx,
+                _wh: wh,
+                _b: b,
+                cache: Default::default(),
+            })
+            .collect();
+        Self {
+            layers,
+            h: Default::default(),
+            dh: Default::default(),
+            batch_size,
+            time_size,
+            channel_size,
+            hidden_size,
+            stateful: true,
+        }
+    }
     pub fn forward(&mut self, xs: Arr3d) -> Arr3d {
         let mut hs = Arr3d::zeros((self.batch_size, self.time_size, self.hidden_size));
         if !self.stateful || false {
@@ -127,22 +131,30 @@ impl<'a> TimeRNN<'a> {
             self.h = layer.forward(xs.index_axis(Axis(1), _t).to_owned(), self.h.clone());
             hs.index_axis_mut(Axis(1), _t).assign(&self.h);
         }
-        // self.layers = vec![];
-        // for _t in 0..self.time_size {
-        //     let mut layer = _RNN {
-        //         _wx: &self.wx,
-        //         _wh: &self.wh,
-        //         _b: &self.b,
-        //         cache: Default::default(),
-        //     };
-        //     self.h = layer.forward(xs.index_axis(Axis(1), _t).to_owned(), self.h.clone());
-        //     hs.index_axis_mut(Axis(1), _t).assign(&self.h);
-        //     // self.layers.push(layer);
-        // }
+        self.layers = vec![];
+        for (_t, layer) in self.layers.iter_mut().enumerate() {
+            self.h = layer.forward(xs.index_axis(Axis(1), _t).to_owned(), self.h.clone());
+            hs.index_axis_mut(Axis(1), _t).assign(&self.h);
+        }
         hs
     }
-
-    pub fn backward(&mut self, dhs: Arr3d) {
-        // let
+    /// dhs
+    pub fn backward(&mut self, dhs: Arr3d) -> Arr3d {
+        let mut dxs = Arr3d::zeros((self.batch_size, self.time_size, self.channel_size));
+        /// 一番端っこのRNNではhはゼロ?
+        let mut dh = Arr2d::zeros((self.batch_size, self.hidden_size));
+        for (_t, layer) in self.layers.iter_mut().enumerate().rev() {
+            let (_dx, _dh) = layer.backward(dhs.index_axis(Axis(1), _t).to_owned() + dh);
+            dh = _dh;
+            dxs.index_axis_mut(Axis(1), _t).assign(&_dx);
+        }
+        self.dh = dh;
+        dxs
+    }
+    pub fn set_state(&mut self, h: Arr2d) {
+        self.h = h;
+    }
+    pub fn reset_state(&mut self) {
+        self.h = Default::default();
     }
 }
