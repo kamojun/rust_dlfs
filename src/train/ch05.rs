@@ -14,7 +14,7 @@ pub fn train() {
     const BATCH_SIZE: usize = 10;
     const TIME_SIZE: usize = 5;
     const LR: f32 = 0.1;
-    const MAX_EPOCH: usize = 1;
+    const MAX_EPOCH: usize = 100;
     const CORPUS_SIZE: usize = 1000;
 
     // corpus ... 文章を、その単語のID列で表したもの
@@ -37,6 +37,7 @@ pub fn train() {
     let optimizer = AdaGrad::new(LR);
     let mut trainer = RnnlmTrainer::new(model, &params, optimizer);
     trainer.fit(xs, ts, MAX_EPOCH, BATCH_SIZE, TIME_SIZE, None);
+    trainer.print_ppl();
 }
 
 #[test]

@@ -33,13 +33,19 @@ impl<T: Default> Param<T> for P1<T> {
 }
 impl P1<Arr1d> {
     pub fn update(&self) {
-        let g = self.grads.borrow()[0].clone();
-        *self._p.borrow_mut() += &g;
+        // let g = self.grads.borrow()[0].clone() * 0.1;
+        let sum = Arr1d::zeros(self.grads.borrow()[0].dim());
+        let g = self.grads.borrow().iter().fold(sum, |sum, x| sum + x * 0.1);
+        *self._p.borrow_mut() -= &g;
+        *self.grads.borrow_mut() = Vec::new();
     }
 }
 impl P1<Arr2d> {
     pub fn update(&self) {
-        let g = self.grads.borrow()[0].clone();
-        *self._p.borrow_mut() += &g;
+        // let g = self.grads.borrow()[0].clone() * 0.1;
+        let sum = Arr2d::zeros(self.grads.borrow()[0].dim());
+        let g = self.grads.borrow().iter().fold(sum, |sum, x| sum + x * 0.1);
+        *self._p.borrow_mut() -= &g;
+        *self.grads.borrow_mut() = Vec::new();
     }
 }

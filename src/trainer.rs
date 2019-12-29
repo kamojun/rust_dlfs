@@ -28,6 +28,9 @@ impl<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<'a, R, P, O> {
         let data_size = x.shape()[0];
         let sample_num = data_size / time_size;
     }
+    pub fn print_ppl(&self) {
+        putsd!(self.ppl_list);
+    }
     pub fn fit(
         &mut self,
         xs: Vec<usize>,
