@@ -7,18 +7,20 @@ use crate::util::*;
 extern crate ndarray;
 use ndarray::{s, Array, Array1, Array2, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
-pub struct RnnlmTrainer<R: Rnnlm, O: Optimizer> {
+pub struct RnnlmTrainer<R: Rnnlm, P: RnnlmParams, O: Optimizer> {
     model: R,
+    params: P,
     optimizer: O,
     time_idx: usize,
     ppl_list: Vec<f32>,
     eval_interval: usize,
     current_epoch: usize,
 }
-impl<R: Rnnlm, O: Optimizer> RnnlmTrainer<R, O> {
-    pub fn new(model: R, optimizer: O) -> Self {
+impl<R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<R, P, O> {
+    pub fn new(model: R, params: P, optimizer: O) -> Self {
         Self {
             model,
+            params,
             optimizer,
             time_idx: 0,
             ppl_list: Vec::new(),
@@ -58,7 +60,7 @@ impl<R: Rnnlm, O: Optimizer> RnnlmTrainer<R, O> {
             for (iter, (batch_x, batch_t)) in x_batches.zip(t_batches).enumerate() {
                 eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
                 self.model.backward();
-                // self.model.update();
+                self.params.update();
                 if iter % eval_interval == 0 {
                     let ppl = (eval_loss / eval_interval as f32).exp();
                     let elapsed_time = std::time::Instant::now() - start_time;

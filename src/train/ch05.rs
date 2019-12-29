@@ -1,8 +1,9 @@
 use crate::io::*;
 use crate::layers::loss_layer::*;
 use crate::layers::*;
-use crate::model::SimpleCBOW;
+use crate::model::rnn::*;
 use crate::optimizer::{AdaGrad, Optimizer, SGD};
+use crate::trainer::RnnlmTrainer;
 use crate::trainer::Trainer;
 use crate::util::*;
 use std::collections::HashMap;
@@ -32,7 +33,10 @@ pub fn train() {
     putsd!(CORPUS_SIZE, vocab_size);
 
     let max_iters = data_size / (BATCH_SIZE * TIME_SIZE);
-    let model = SimpleCBOW::<SoftMaxWithLoss>::new(vocab_size, HIDDEN_SIZE);
+    let params = SimpleRnnlmParams::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
+    let model = SimpleRnnlm::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE, TIME_SIZE, &params);
+    let optimizer = AdaGrad::new(LR);
+    // let trainer = RnnlmTrainer::new(model, params, optimizer);
 }
 
 #[test]

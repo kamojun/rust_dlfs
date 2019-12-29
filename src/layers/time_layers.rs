@@ -1,7 +1,8 @@
+use crate::functions::*;
 use crate::layers::*;
 use crate::params::*;
 use crate::types::*;
-use ndarray::{Array1, Axis};
+use ndarray::{Array1, Axis, Dimension, RemoveAxis};
 
 #[derive(Default)]
 struct Cache {
@@ -49,7 +50,6 @@ pub struct TimeRNN<'a> {
     h: Arr2d,
     dh: Arr2d,
     stateful: bool,
-    batch_size: usize,
     time_size: usize,
     channel_size: usize,
     hidden_size: usize,
@@ -57,13 +57,7 @@ pub struct TimeRNN<'a> {
 }
 
 impl<'a> TimeRNN<'a> {
-    pub fn new(
-        wx: &'a P1<Arr2d>,
-        wh: &'a P1<Arr2d>,
-        b: &'a P1<Arr1d>,
-        batch_size: usize,
-        time_size: usize,
-    ) -> Self {
+    pub fn new(wx: &'a P1<Arr2d>, wh: &'a P1<Arr2d>, b: &'a P1<Arr1d>, time_size: usize) -> Self {
         let (channel_size, hidden_size) = wx.p.dim();
         let layers: Vec<_> = (0..time_size)
             .map(|_| RNN {
@@ -77,29 +71,34 @@ impl<'a> TimeRNN<'a> {
             layers,
             h: Default::default(),
             dh: Default::default(),
-            batch_size,
             time_size,
             channel_size,
             hidden_size,
             stateful: true,
         }
     }
-    pub fn forward(&mut self, xs: Arr3d) -> Arr3d {
-        let mut hs = Arr3d::zeros((self.batch_size, self.time_size, self.hidden_size));
+    pub fn forward(&mut self, xs: Arr3d) -> Arr2d {
+        let batch_size = xs.dim().0;
+        let mut hs = Arr3d::zeros((batch_size, self.time_size, self.hidden_size));
         if !self.stateful || false {
-            self.h = Arr2d::zeros((self.batch_size, self.hidden_size));
+            self.h = Arr2d::zeros((batch_size, self.hidden_size));
         }
         for (t, layer) in self.layers.iter_mut().enumerate() {
             self.h = layer.forward(xs.index_axis(Axis(1), t).to_owned(), self.h.clone());
             hs.index_axis_mut(Axis(1), t).assign(&self.h);
         }
-        hs
+        hs.into_shape((batch_size * self.time_size, self.hidden_size))
+            .unwrap()
     }
     /// dhs
-    pub fn backward(&mut self, dhs: Arr3d) -> Arr3d {
-        let mut dxs = Arr3d::zeros((self.batch_size, self.time_size, self.channel_size));
+    pub fn backward<D: Dimension>(&mut self, dhs: Array<f32, D>) -> Arr3d {
+        let batch_size = dhs.len() / (self.time_size * self.hidden_size);
+        let dhs = dhs
+            .into_shape((batch_size, self.time_size, self.hidden_size))
+            .unwrap();
+        let mut dxs = Arr3d::zeros((batch_size, self.time_size, self.channel_size));
         /// 一番端っこのRNNではhはゼロ?
-        let mut dh = Arr2d::zeros((self.batch_size, self.hidden_size));
+        let mut dh = Arr2d::zeros((batch_size, self.hidden_size));
         for (t, layer) in self.layers.iter_mut().enumerate().rev() {
             let (_dx, _dh) = layer.backward(dhs.index_axis(Axis(1), t).to_owned() + dh);
             dh = _dh;
@@ -153,7 +152,7 @@ impl<'a> TimeEmbedding<'a> {
 pub struct TimeAffine<'a> {
     w: &'a P1<Arr2d>,
     b: &'a P1<Arr1d>,
-    x: Arr3d,
+    x: Arr2d,
 }
 fn dot(x: &Arr3d, w: &Arr2d) -> Arr3d {
     let (j, k, l) = x.dim();
@@ -168,35 +167,46 @@ fn dot(x: &Arr3d, w: &Arr2d) -> Arr3d {
 }
 
 impl<'a> TimeAffine<'a> {
-    pub fn new(&mut self, w: &'a P1<Arr2d>, b: &'a P1<Arr1d>) -> Self {
+    pub fn new(w: &'a P1<Arr2d>, b: &'a P1<Arr1d>) -> Self {
         Self {
             w,
             b,
             x: Default::default(),
         }
     }
-    pub fn forward(&mut self, x: Arr3d) -> Arr3d {
+    pub fn forward(&mut self, x: Arr2d) -> Arr2d {
         self.x = x;
-        dot(&self.x, &self.w.p) + &self.b.p
+        // dot(&self.x, &self.w.p) + &self.b.p
+        self.x.dot(&self.w.p) + &self.b.p
     }
-    pub fn backward(&mut self, dout: Arr3d) -> Arr3d {
-        let (b, t, c_out) = dout.dim(); // batch, time, channel
-        let c_in = self.x.dim().2;
-        let dout = dout.into_shape((b * t, c_out)).unwrap();
-        let rx = self
-            .x
-            .clone()
-            .into_shape((b * t, c_in))
-            .expect("self.x and dout must have same dimention!");
+    pub fn backward(&mut self, dout: Arr2d) -> Arr2d {
+        // let (b, t, c_out) = dout.dim(); // batch, time, channel
+        // let c_in = self.x.dim().2;
+        // let dout = dout.into_shape((b * t, c_out)).unwrap();
+        // let rx = self
+        //     .x
+        //     .clone()
+        //     .into_shape((b * t, c_in))
+        //     .expect("self.x and dout must have same dimention!");
         self.b.store(dout.sum_axis(Axis(0)));
-        self.w.store(rx.t().dot(&dout));
-        dout.dot(&self.w.p.t()).into_shape((b, t, c_in)).unwrap()
+        self.w.store(self.x.t().dot(&dout));
+        dout.dot(&self.w.p.t())
     }
 }
 
-pub struct TimeSoftmaxWithLoss {}
+/// SoftMaxWithLossと全く同じになりそうなので、とりあえずはあとで
+pub struct TimeSoftmaxWithLoss {
+    pred: Arr2d,
+    target: Array1<usize>,
+}
 impl TimeSoftmaxWithLoss {
-    fn forward(&mut self, xs: Arr3d, ts: Array2<usize>) -> f32 {
-        0.0
+    fn forward(&mut self, xs: Arr2d, ts: Array1<usize>) -> f32 {
+        self.pred = softmax(xs);
+        self.target = ts;
+        // 本ではもう少しごちゃごちゃやっているmaskがなんとか
+        cross_entropy_error_target(&self.pred, &self.target)
+    }
+    fn backward(&mut self) -> Arr2d {
+        unimplemented!();
     }
 }
