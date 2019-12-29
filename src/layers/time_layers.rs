@@ -13,7 +13,7 @@ struct Cache {
 /// 外部入力 x: (b, c), wx: (c, h)
 /// 相互入出力 h: (b, h), wh: (h, h)
 /// 上位のTimeRNNではこれがtime_size個存在する
-pub struct RNN<'a> {
+struct RNN<'a> {
     wx: &'a P1<Arr2d>,
     wh: &'a P1<Arr2d>,
     b: &'a P1<Arr1d>,
@@ -45,7 +45,7 @@ impl<'a> RNN<'a> {
 
 /// (b,c)の外部入力と、(b,h)の内部相互入力を受け、(b,h)を出力する
 /// time_sizeはlayerの数
-struct TimeRNN<'a> {
+pub struct TimeRNN<'a> {
     h: Arr2d,
     dh: Arr2d,
     stateful: bool,
@@ -116,7 +116,7 @@ impl<'a> TimeRNN<'a> {
     }
 }
 
-struct TimeEmbedding<'a> {
+pub struct TimeEmbedding<'a> {
     w: &'a P1<Arr2d>,   // <- グローバルパラメータ(更新、学習が必要なもの)
     idx: Array2<usize>, // <- ローカルパラメータ(直接保持する)
 }
@@ -150,10 +150,21 @@ impl<'a> TimeEmbedding<'a> {
     }
 }
 
-struct TimeAffine<'a> {
+pub struct TimeAffine<'a> {
     w: &'a P1<Arr2d>,
     b: &'a P1<Arr1d>,
     x: Arr3d,
+}
+fn dot(x: &Arr3d, w: &Arr2d) -> Arr3d {
+    let (j, k, l) = x.dim();
+    let (m, n) = w.dim();
+    assert_eq!(l, m, "x.dim.2 and w.dim.0 must coinside!");
+    x.to_owned()
+        .into_shape((j * k, l))
+        .unwrap()
+        .dot(w)
+        .into_shape((j, k, n))
+        .unwrap()
 }
 
 impl<'a> TimeAffine<'a> {
@@ -164,6 +175,28 @@ impl<'a> TimeAffine<'a> {
             x: Default::default(),
         }
     }
-    pub fn forward(&mut self, x: Arr3d) {}
-    pub fn backward(&mut self, dout: Arr3d) {}
+    pub fn forward(&mut self, x: Arr3d) -> Arr3d {
+        self.x = x;
+        dot(&self.x, &self.w.p) + &self.b.p
+    }
+    pub fn backward(&mut self, dout: Arr3d) -> Arr3d {
+        let (b, t, c_out) = dout.dim(); // batch, time, channel
+        let c_in = self.x.dim().2;
+        let dout = dout.into_shape((b * t, c_out)).unwrap();
+        let rx = self
+            .x
+            .clone()
+            .into_shape((b * t, c_in))
+            .expect("self.x and dout must have same dimention!");
+        self.b.store(dout.sum_axis(Axis(0)));
+        self.w.store(rx.t().dot(&dout));
+        dout.dot(&self.w.p.t()).into_shape((b, t, c_in)).unwrap()
+    }
+}
+
+pub struct TimeSoftmaxWithLoss {}
+impl TimeSoftmaxWithLoss {
+    fn forward(&mut self, xs: Arr3d, ts: Array2<usize>) -> f32 {
+        0.0
+    }
 }
