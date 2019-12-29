@@ -23,7 +23,7 @@ struct RNN<'a> {
 
 impl<'a> RNN<'a> {
     pub fn forward(&mut self, x: Arr2d, h_prev: Arr2d) -> Arr2d {
-        let t = h_prev.dot(&self.wh.p) + x.dot(&self.wx.p) + self.b.p.clone();
+        let t = h_prev.dot(&*self.wh.p()) + x.dot(&*self.wx.p()) + &*self.b.p();
         let h_next = t.mapv(f32::tanh);
         self.cache = Cache {
             x,
@@ -35,8 +35,8 @@ impl<'a> RNN<'a> {
     /// dx: (b, c)とdh_prev: (b, h)を返す
     pub fn backward(&mut self, dh_next: Arr2d) -> (Arr2d, Arr2d) {
         let dt = dh_next * self.cache.h_next.mapv(|y| 1.0 - y * y);
-        let dh_prev = dt.dot(&self.wh.p.t());
-        let dx = dt.dot(&self.wx.p.t());
+        let dh_prev = dt.dot(&self.wh.p().t());
+        let dx = dt.dot(&self.wx.p().t());
         self.b.store(dt.sum_axis(Axis(0)));
         self.wh.store(self.cache.h_prev.t().dot(&dt));
         self.wx.store(self.cache.x.t().dot(&dt));
@@ -58,7 +58,7 @@ pub struct TimeRNN<'a> {
 
 impl<'a> TimeRNN<'a> {
     pub fn new(wx: &'a P1<Arr2d>, wh: &'a P1<Arr2d>, b: &'a P1<Arr1d>, time_size: usize) -> Self {
-        let (channel_size, hidden_size) = wx.p.dim();
+        let (channel_size, hidden_size) = wx.p().dim();
         let layers: Vec<_> = (0..time_size)
             .map(|_| RNN {
                 wx: wx,
@@ -80,7 +80,7 @@ impl<'a> TimeRNN<'a> {
     pub fn forward(&mut self, xs: Arr3d) -> Arr2d {
         let batch_size = xs.dim().0;
         let mut hs = Arr3d::zeros((batch_size, self.time_size, self.hidden_size));
-        if !self.stateful || false {
+        if !self.stateful || self.h.len() == 0 {
             self.h = Arr2d::zeros((batch_size, self.hidden_size));
         }
         for (t, layer) in self.layers.iter_mut().enumerate() {
@@ -128,16 +128,16 @@ impl<'a> TimeEmbedding<'a> {
     }
     pub fn forward(&mut self, idx: Array2<usize>) -> Arr3d {
         let (batch_size, time_size) = idx.dim();
-        let channel_num = self.w.p.dim().1;
+        let channel_num = self.w.p().dim().1;
         let mut out: Arr3d = Array3::zeros((batch_size, time_size, channel_num));
         for (mut _o, _x) in out.outer_iter_mut().zip(idx.outer_iter()) {
-            _o.assign(&pickup1(&self.w.p, Axis(0), _x));
+            _o.assign(&pickup1(&self.w.p(), Axis(0), _x));
         }
         self.idx = idx;
         out
     }
     pub fn backward(&mut self, dout: Arr3d) {
-        let mut dw = Array2::zeros(self.w.p.dim());
+        let mut dw = Array2::zeros(self.w.p().dim());
         // バッチ方向に回す
         for (_o, _x) in dout.outer_iter().zip(self.idx.outer_iter()) {
             for (__o, __x) in _o.outer_iter().zip(_x.iter()) {
@@ -177,7 +177,7 @@ impl<'a> TimeAffine<'a> {
     pub fn forward(&mut self, x: Arr2d) -> Arr2d {
         self.x = x;
         // dot(&self.x, &self.w.p) + &self.b.p
-        self.x.dot(&self.w.p) + &self.b.p
+        self.x.dot(&*self.w.p()) + &*self.b.p()
     }
     pub fn backward(&mut self, dout: Arr2d) -> Arr2d {
         // let (b, t, c_out) = dout.dim(); // batch, time, channel
@@ -190,7 +190,7 @@ impl<'a> TimeAffine<'a> {
         //     .expect("self.x and dout must have same dimention!");
         self.b.store(dout.sum_axis(Axis(0)));
         self.w.store(self.x.t().dot(&dout));
-        dout.dot(&self.w.p.t())
+        dout.dot(&self.w.p().t())
     }
 }
 

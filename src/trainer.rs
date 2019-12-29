@@ -7,25 +7,21 @@ use crate::util::*;
 extern crate ndarray;
 use ndarray::{s, Array, Array1, Array2, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
-pub struct RnnlmTrainer<R: Rnnlm, P: RnnlmParams, O: Optimizer> {
+pub struct RnnlmTrainer<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> {
     model: R,
-    params: P,
+    params: &'a P,
     optimizer: O,
     time_idx: usize,
     ppl_list: Vec<f32>,
-    eval_interval: usize,
-    current_epoch: usize,
 }
-impl<R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<R, P, O> {
-    pub fn new(model: R, params: P, optimizer: O) -> Self {
+impl<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<'a, R, P, O> {
+    pub fn new(model: R, params: &'a P, optimizer: O) -> Self {
         Self {
             model,
             params,
             optimizer,
             time_idx: 0,
             ppl_list: Vec::new(),
-            eval_interval: 0,
-            current_epoch: 0,
         }
     }
     pub fn get_batch(&self, x: Arr2d, t: Arr2d, batch_size: usize, time_size: usize) {
@@ -39,15 +35,17 @@ impl<R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<R, P, O> {
         max_epoch: usize,
         batch_size: usize,
         time_size: usize,
-        eval_interval: usize,
+        eval_interval: Option<usize>,
     ) {
         let data_size = xs.len();
         //  (batch_size, time_size)型のデータを学習に用いる
-        self.eval_interval = eval_interval;
         let mut eval_loss = 0.0;
 
         let time_shift = data_size / batch_size;
         let max_iters = time_shift / time_size;
+        let time_shift = max_iters * time_size;
+        let eval_interval = eval_interval.unwrap_or(max_iters);
+
         let xsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| xs[i * time_shift + j]);
         let tsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| ts[i * time_shift + j]);
 
@@ -55,8 +53,8 @@ impl<R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<R, P, O> {
         // 単純に同じデータで学習を繰り返す。
         // ランダム性はない
         for epoch in 1..=max_epoch {
-            let x_batches = xsa.axis_chunks_iter(Axis(1), max_iters);
-            let t_batches = tsa.axis_chunks_iter(Axis(1), max_iters);
+            let x_batches = xsa.axis_chunks_iter(Axis(1), time_size);
+            let t_batches = tsa.axis_chunks_iter(Axis(1), time_size);
             for (iter, (batch_x, batch_t)) in x_batches.zip(t_batches).enumerate() {
                 eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
                 self.model.backward();

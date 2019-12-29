@@ -11,14 +11,23 @@ pub trait Rnnlm {
     fn backward(&mut self);
 }
 pub trait RnnlmParams {
-    fn update(&mut self) {
+    fn update(&self) {
         unimplemented!();
     }
 }
-impl RnnlmParams for SimpleRnnlmParams {}
+impl RnnlmParams for SimpleRnnlmParams {
+    fn update(&self) {
+        self.embed_w.update();
+        self.rnn_wx.update();
+        self.rnn_wh.update();
+        self.rnn_b.update();
+        self.affine_w.update();
+        self.affine_b.update();
+    }
+}
 
 pub struct SimpleRnnlmParams {
-    pub embed_w: P1<Arr2d>,
+    embed_w: P1<Arr2d>,
     rnn_wx: P1<Arr2d>,
     rnn_wh: P1<Arr2d>,
     rnn_b: P1<Arr1d>,

@@ -14,7 +14,7 @@ pub fn train() {
     const BATCH_SIZE: usize = 10;
     const TIME_SIZE: usize = 5;
     const LR: f32 = 0.1;
-    const MAX_EPOCH: usize = 100;
+    const MAX_EPOCH: usize = 1;
     const CORPUS_SIZE: usize = 1000;
 
     // corpus ... 文章を、その単語のID列で表したもの
@@ -27,16 +27,16 @@ pub fn train() {
         .into_iter()
         .collect();
     let vocab_size = corpus.iter().fold(usize::min_value(), |m, x| m.max(*x)) + 1; // 単語数
-    let xs = &corpus[..corpus.len() - 1].to_vec();
-    let ts = &corpus[1..].to_vec();
+    let xs = corpus[..corpus.len() - 1].to_vec();
+    let ts = corpus[1..].to_vec();
     let data_size = xs.len();
     putsd!(CORPUS_SIZE, vocab_size);
 
-    let max_iters = data_size / (BATCH_SIZE * TIME_SIZE);
     let params = SimpleRnnlmParams::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
     let model = SimpleRnnlm::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE, TIME_SIZE, &params);
     let optimizer = AdaGrad::new(LR);
-    // let trainer = RnnlmTrainer::new(model, params, optimizer);
+    let mut trainer = RnnlmTrainer::new(model, &params, optimizer);
+    trainer.fit(xs, ts, MAX_EPOCH, BATCH_SIZE, TIME_SIZE, None);
 }
 
 #[test]
