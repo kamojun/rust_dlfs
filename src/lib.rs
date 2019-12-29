@@ -21,6 +21,7 @@ pub mod io;
 pub mod layers;
 pub mod model;
 pub mod optimizer;
+pub mod params;
 pub mod train;
 pub mod trainer;
 pub mod types;
