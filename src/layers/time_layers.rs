@@ -1,3 +1,4 @@
+use crate::layers::*;
 use crate::params::*;
 use crate::types::*;
 use ndarray::{Array1, Axis};
@@ -12,16 +13,16 @@ struct Cache {
 /// 外部入力 x: (b, c), wx: (c, h)
 /// 相互入出力 h: (b, h), wh: (h, h)
 /// 上位のTimeRNNではこれがtime_size個存在する
-pub struct _RNN<'a> {
-    _wx: &'a P1<Arr2d>,
-    _wh: &'a P1<Arr2d>,
-    _b: &'a P1<Arr1d>,
+pub struct RNN<'a> {
+    wx: &'a P1<Arr2d>,
+    wh: &'a P1<Arr2d>,
+    b: &'a P1<Arr1d>,
     cache: Cache,
 }
 
-impl<'a> _RNN<'a> {
+impl<'a> RNN<'a> {
     pub fn forward(&mut self, x: Arr2d, h_prev: Arr2d) -> Arr2d {
-        let t = h_prev.dot(&self._wh.p) + x.dot(&self._wx.p) + self._b.p.clone();
+        let t = h_prev.dot(&self.wh.p) + x.dot(&self.wx.p) + self.b.p.clone();
         let h_next = t.mapv(f32::tanh);
         self.cache = Cache {
             x,
@@ -33,50 +34,11 @@ impl<'a> _RNN<'a> {
     /// dx: (b, c)とdh_prev: (b, h)を返す
     pub fn backward(&mut self, dh_next: Arr2d) -> (Arr2d, Arr2d) {
         let dt = dh_next * self.cache.h_next.mapv(|y| 1.0 - y * y);
-        let dh_prev = dt.dot(&self._wh.p.t());
-        let dx = dt.dot(&self._wx.p.t());
-        self._b.store(dt.sum_axis(Axis(0)));
-        self._wh.store(self.cache.h_prev.t().dot(&dt));
-        self._wx.store(self.cache.x.t().dot(&dt));
-        (dx, dh_prev)
-    }
-}
-
-struct RNN<'a> {
-    /// (D, H) x(入力)を変換する
-    wx: &'a Arr2d,
-    /// (H, H) h_prevを変換する
-    wh: &'a Arr2d,
-    /// (H, ) 定数項
-    b: &'a Arr1d,
-    dwx: Arr2d,
-    dwh: Arr2d,
-    db: Arr1d,
-    cache: Cache,
-}
-
-impl<'a> RNN<'a> {
-    /// x: (N, D), h_prev:  (N, H)
-    /// N: バッチサイズ
-    /// D: 入力次元
-    /// H: 隠れ次元
-    pub fn forward(&mut self, x: Arr2d, h_prev: Arr2d) -> Arr2d {
-        let t = h_prev.dot(self.wh) + x.dot(self.wx) + self.b.clone();
-        let h_next = t.mapv(f32::tanh);
-        self.cache = Cache {
-            x,
-            h_prev,
-            h_next: h_next.clone(),
-        };
-        h_next
-    }
-    pub fn backward(&mut self, dh_next: Arr2d) -> (Arr2d, Arr2d) {
-        let dt = dh_next * self.cache.h_next.mapv(|y| 1.0 - y * y);
-        let dh_prev = dt.dot(&self.wh.t());
-        let dx = dt.dot(&self.wx.t());
-        self.db = dt.sum_axis(Axis(0));
-        self.dwh = self.cache.h_prev.t().dot(&dt);
-        self.dwx = self.cache.x.t().dot(&dt);
+        let dh_prev = dt.dot(&self.wh.p.t());
+        let dx = dt.dot(&self.wx.p.t());
+        self.b.store(dt.sum_axis(Axis(0)));
+        self.wh.store(self.cache.h_prev.t().dot(&dt));
+        self.wx.store(self.cache.x.t().dot(&dt));
         (dx, dh_prev)
     }
 }
@@ -91,7 +53,7 @@ struct TimeRNN<'a> {
     time_size: usize,
     channel_size: usize,
     hidden_size: usize,
-    layers: Vec<_RNN<'a>>,
+    layers: Vec<RNN<'a>>,
 }
 
 impl<'a> TimeRNN<'a> {
@@ -104,10 +66,10 @@ impl<'a> TimeRNN<'a> {
     ) -> Self {
         let (channel_size, hidden_size) = wx.p.dim();
         let layers: Vec<_> = (0..time_size)
-            .map(|_| _RNN {
-                _wx: wx,
-                _wh: wh,
-                _b: b,
+            .map(|_| RNN {
+                wx: wx,
+                wh: wh,
+                b: b,
                 cache: Default::default(),
             })
             .collect();
@@ -127,14 +89,9 @@ impl<'a> TimeRNN<'a> {
         if !self.stateful || false {
             self.h = Arr2d::zeros((self.batch_size, self.hidden_size));
         }
-        for (_t, layer) in self.layers.iter_mut().enumerate() {
-            self.h = layer.forward(xs.index_axis(Axis(1), _t).to_owned(), self.h.clone());
-            hs.index_axis_mut(Axis(1), _t).assign(&self.h);
-        }
-        self.layers = vec![];
-        for (_t, layer) in self.layers.iter_mut().enumerate() {
-            self.h = layer.forward(xs.index_axis(Axis(1), _t).to_owned(), self.h.clone());
-            hs.index_axis_mut(Axis(1), _t).assign(&self.h);
+        for (t, layer) in self.layers.iter_mut().enumerate() {
+            self.h = layer.forward(xs.index_axis(Axis(1), t).to_owned(), self.h.clone());
+            hs.index_axis_mut(Axis(1), t).assign(&self.h);
         }
         hs
     }
@@ -143,10 +100,10 @@ impl<'a> TimeRNN<'a> {
         let mut dxs = Arr3d::zeros((self.batch_size, self.time_size, self.channel_size));
         /// 一番端っこのRNNではhはゼロ?
         let mut dh = Arr2d::zeros((self.batch_size, self.hidden_size));
-        for (_t, layer) in self.layers.iter_mut().enumerate().rev() {
-            let (_dx, _dh) = layer.backward(dhs.index_axis(Axis(1), _t).to_owned() + dh);
+        for (t, layer) in self.layers.iter_mut().enumerate().rev() {
+            let (_dx, _dh) = layer.backward(dhs.index_axis(Axis(1), t).to_owned() + dh);
             dh = _dh;
-            dxs.index_axis_mut(Axis(1), _t).assign(&_dx);
+            dxs.index_axis_mut(Axis(1), t).assign(&_dx);
         }
         self.dh = dh;
         dxs
@@ -157,4 +114,56 @@ impl<'a> TimeRNN<'a> {
     pub fn reset_state(&mut self) {
         self.h = Default::default();
     }
+}
+
+struct TimeEmbedding<'a> {
+    w: &'a P1<Arr2d>,   // <- グローバルパラメータ(更新、学習が必要なもの)
+    idx: Array2<usize>, // <- ローカルパラメータ(直接保持する)
+}
+impl<'a> TimeEmbedding<'a> {
+    pub fn new(w: &'a P1<Arr2d>) -> Self {
+        Self {
+            w,
+            idx: Default::default(),
+        }
+    }
+    pub fn forward(&mut self, idx: Array2<usize>) -> Arr3d {
+        let (batch_size, time_size) = idx.dim();
+        let channel_num = self.w.p.dim().1;
+        let mut out: Arr3d = Array3::zeros((batch_size, time_size, channel_num));
+        for (mut _o, _x) in out.outer_iter_mut().zip(idx.outer_iter()) {
+            _o.assign(&pickup1(&self.w.p, Axis(0), _x));
+        }
+        self.idx = idx;
+        out
+    }
+    pub fn backward(&mut self, dout: Arr3d) {
+        let mut dw = Array2::zeros(self.w.p.dim());
+        // バッチ方向に回す
+        for (_o, _x) in dout.outer_iter().zip(self.idx.outer_iter()) {
+            for (__o, __x) in _o.outer_iter().zip(_x.iter()) {
+                let mut row = dw.index_axis_mut(Axis(0), *__x);
+                row += &__o;
+            }
+        }
+        self.w.store(dw);
+    }
+}
+
+struct TimeAffine<'a> {
+    w: &'a P1<Arr2d>,
+    b: &'a P1<Arr1d>,
+    x: Arr3d,
+}
+
+impl<'a> TimeAffine<'a> {
+    pub fn new(&mut self, w: &'a P1<Arr2d>, b: &'a P1<Arr1d>) -> Self {
+        Self {
+            w,
+            b,
+            x: Default::default(),
+        }
+    }
+    pub fn forward(&mut self, x: Arr3d) {}
+    pub fn backward(&mut self, dout: Arr3d) {}
 }
