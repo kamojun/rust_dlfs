@@ -4,7 +4,7 @@ use crate::optimizer::*;
 use crate::params::*;
 use crate::types::*;
 use crate::util::randarr2d;
-use ndarray::{Array2, Axis};
+use ndarray::{Array, Array2, Axis, RemoveAxis};
 
 pub trait Rnnlm {
     fn forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32;
@@ -62,10 +62,18 @@ pub struct SimpleRnnlm<'a> {
     affine: TimeAffine<'a>,
     loss_layer: SoftMaxWithLoss,
 }
+
+/// 先頭の軸を落とす
+fn remove_axis<T, D: RemoveAxis>(a: Array<T, D>) -> Array<T, D::Smaller> {
+    let mut d = a.shape().to_vec();
+    let f = d.remove(1);
+    d[0] *= f;
+    a.into_shape(d).unwrap().into_dimensionality().unwrap()
+}
 impl<'a> Rnnlm for SimpleRnnlm<'a> {
     fn forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32 {
         let x = self.embed.forward(x);
-        let x = self.rnn.forward(x);
+        let x = remove_axis(self.rnn.forward(x));
         let x = self.affine.forward(x);
         let batch_time_size = t.len();
         let t = t.into_shape((batch_time_size,)).unwrap();
@@ -100,4 +108,14 @@ impl<'a> SimpleRnnlm<'a> {
             loss_layer: Default::default(),
         }
     }
+}
+
+pub struct SimpleRnnlmLSTM<'a> {
+    vocab_size: usize,
+    wordvec_size: usize,
+    hidden_size: usize,
+    embed: TimeEmbedding<'a>,
+    rnn: TimeLSTM<'a>,
+    affine: TimeAffine<'a>,
+    loss_layer: SoftMaxWithLoss,
 }

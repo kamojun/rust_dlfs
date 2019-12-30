@@ -13,8 +13,8 @@ pub struct P1<T: Default> {
     _p: RefCell<T>,
     /// 学習によって得られた勾配
     grads: RefCell<Vec<T>>,
-    /// optimizerが使う情報
-    cache: RefCell<Vec<T>>,
+    // /// optimizerが使う情報
+    // cache: RefCell<Vec<T>>,
 }
 
 impl<T: Default> Param<T> for P1<T> {

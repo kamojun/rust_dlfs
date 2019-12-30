@@ -62,7 +62,7 @@ impl<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<'a, R, P, O> {
                 eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
                 self.model.backward();
                 self.params.update();
-                if iter % eval_interval == 0 {
+                if (iter + 1) % eval_interval == 0 {
                     let ppl = (eval_loss / eval_interval as f32).exp();
                     let elapsed_time = std::time::Instant::now() - start_time;
                     println!(

@@ -2,6 +2,7 @@ use crate::functions::*;
 use crate::layers::*;
 use crate::params::*;
 use crate::types::*;
+use itertools::izip;
 use ndarray::{Array1, Axis, Dimension, RemoveAxis};
 
 #[derive(Default)]
@@ -77,7 +78,7 @@ impl<'a> TimeRNN<'a> {
             stateful: true,
         }
     }
-    pub fn forward(&mut self, xs: Arr3d) -> Arr2d {
+    pub fn forward(&mut self, xs: Arr3d) -> Arr3d {
         let batch_size = xs.dim().0;
         let mut hs = Arr3d::zeros((batch_size, self.time_size, self.hidden_size));
         if !self.stateful || self.h.len() == 0 {
@@ -87,10 +88,8 @@ impl<'a> TimeRNN<'a> {
             self.h = layer.forward(xs.index_axis(Axis(1), t).to_owned(), self.h.clone());
             hs.index_axis_mut(Axis(1), t).assign(&self.h);
         }
-        hs.into_shape((batch_size * self.time_size, self.hidden_size))
-            .unwrap()
+        hs
     }
-    /// dhs
     pub fn backward<D: Dimension>(&mut self, dhs: Array<f32, D>) -> Arr3d {
         let batch_size = dhs.len() / (self.time_size * self.hidden_size);
         let dhs = dhs
@@ -154,18 +153,6 @@ pub struct TimeAffine<'a> {
     b: &'a P1<Arr1d>,
     x: Arr2d,
 }
-fn dot(x: &Arr3d, w: &Arr2d) -> Arr3d {
-    let (j, k, l) = x.dim();
-    let (m, n) = w.dim();
-    assert_eq!(l, m, "x.dim.2 and w.dim.0 must coinside!");
-    x.to_owned()
-        .into_shape((j * k, l))
-        .unwrap()
-        .dot(w)
-        .into_shape((j, k, n))
-        .unwrap()
-}
-
 impl<'a> TimeAffine<'a> {
     pub fn new(w: &'a P1<Arr2d>, b: &'a P1<Arr1d>) -> Self {
         Self {
@@ -208,5 +195,175 @@ impl TimeSoftmaxWithLoss {
     }
     fn backward(&mut self) -> Arr2d {
         unimplemented!();
+    }
+}
+
+#[derive(Default, Clone)]
+struct CacheLSTM {
+    x: Arr2d,
+    h_prev: Arr2d,
+    c_prev: Arr2d,
+    i: Arr2d,
+    f: Arr2d,
+    g: Arr2d,
+    o: Arr2d,
+    c_next: Arr2d,
+}
+struct LSTM<'a> {
+    /// (channel, 4*hidden)
+    wx: &'a P1<Arr2d>,
+    /// (hidden, 4*hidden)
+    wh: &'a P1<Arr2d>,
+    /// (4*hidden, )
+    b: &'a P1<Arr1d>,
+    cache: CacheLSTM,
+}
+trait Derivative {
+    fn dsigmoid(&self) -> Self;
+    fn dtanh(&self) -> Self;
+}
+impl<D: Dimension> Derivative for Array<f32, D> {
+    /// self = sigmoid(x)のとき、dself/dx = self*(1-self)となる
+    fn dsigmoid(&self) -> Self {
+        self * &(1.0 - self)
+    }
+    /// self = tanh(x)のとき、dself/dx = 1-self**2となる
+    fn dtanh(&self) -> Self {
+        1.0 - self * self
+    }
+}
+
+impl<'a> LSTM<'a> {
+    /// x: (batch, channel), h_prev: (batch, hidden), c_prev: (batch, hidden)
+    pub fn forward(&mut self, x: Arr2d, h_prev: Arr2d, c_prev: Arr2d) -> (Arr2d, Arr2d) {
+        let (batch_size, hidden_size) = h_prev.dim();
+        // (batch, 4*hidden)
+        let a = x.dot(&*self.wx.p()) + h_prev.dot(&*self.wh.p()) + &*self.b.p();
+        let mut chunks = a.axis_chunks_iter(Axis(1), hidden_size);
+        let mut yielder = |f: fn(f32) -> f32| chunks.next().unwrap().mapv(f);
+        // それぞれ (batch, hidden)
+        let sigmoid = |x: f32| 1.0 / (1.0 + (-x).exp());
+        let f = yielder(sigmoid); // forget
+        let g = yielder(f32::tanh); // gain new info
+        let i = yielder(sigmoid); // input
+        let o = yielder(sigmoid); // output
+
+        let c_next = &f * &c_prev + &g * &i; // c_prevを割合fで忘却し、gを割合iで追加する
+        let h_next = &o * &c_next.mapv(f32::tanh); // c_nextをtanhして、割合oで出力する
+
+        self.cache = CacheLSTM {
+            x,
+            h_prev,
+            c_prev,
+            i,
+            f,
+            g,
+            o,
+            c_next: c_next.clone(),
+        };
+        (h_next, c_next)
+    }
+    /// 返り値は(dx, dh_prev, dc_prev)
+    pub fn backward(&mut self, dh_next: Arr2d, dc_next: Arr2d) -> (Arr2d, Arr2d, Arr2d) {
+        let cache = self.cache.clone();
+        let c_next_tanh = cache.c_next.mapv(f32::tanh); // 本来forwardで行った計算だが、cacheしてないので、復活させる
+        let ds = dc_next + &dh_next * &cache.o * c_next_tanh.dtanh();
+        let dc_prev = &ds * &cache.f;
+        // dAを準備
+        let (batch_size, hidden_size) = dh_next.dim();
+        let mut dA = Arr2d::zeros((batch_size, hidden_size * 4));
+        let mut chunk = dA.axis_chunks_iter_mut(Axis(1), hidden_size);
+        let mut assign = |d| chunk.next().unwrap().assign(&d);
+        // di, df, do, dgの順に格納していく
+        assign(&ds * &cache.g * cache.i.dsigmoid());
+        assign(&ds * &cache.c_prev * cache.f.dsigmoid());
+        assign(&dh_next * &c_next_tanh * cache.o.dsigmoid());
+        assign(&ds * &cache.i * cache.o.dtanh());
+        // dAから、wh, wx, bの勾配を計算し格納
+        self.wh.store(cache.h_prev.t().dot(&dA));
+        self.wx.store(cache.x.t().dot(&dA));
+        self.b.store(dA.sum_axis(Axis(0))); // <= batch方向に潰す
+
+        let dx = dA.dot(&self.wx.p().t());
+        let dh_prev = dA.dot(&self.wh.p().t());
+        (dx, dh_prev, dc_prev)
+    }
+}
+
+pub struct TimeLSTM<'a> {
+    h: (Arr2d, Arr2d),
+    c: (Arr2d, Arr2d),
+    stateful: bool,
+    time_size: usize,
+    channel_size: usize,
+    hidden_size: usize,
+    layers: Vec<LSTM<'a>>,
+}
+
+impl<'a> TimeLSTM<'a> {
+    pub fn new(wx: &'a P1<Arr2d>, wh: &'a P1<Arr2d>, b: &'a P1<Arr1d>, time_size: usize) -> Self {
+        let (channel_size, mut hidden_size) = wx.p().dim();
+        hidden_size /= 4; // wxは(channel, 4*hidden)
+        let layers: Vec<_> = (0..time_size)
+            .map(|_| LSTM {
+                wx: wx,
+                wh: wh,
+                b: b,
+                cache: Default::default(),
+            })
+            .collect();
+        Self {
+            layers,
+            h: Default::default(),
+            c: Default::default(),
+            time_size,
+            channel_size,
+            hidden_size,
+            stateful: false,
+        }
+    }
+    pub fn forward(&mut self, xs: Arr3d) -> Arr3d {
+        let batch_size = xs.dim().0;
+        let mut hs = Arr3d::zeros((batch_size, self.time_size, self.hidden_size));
+        if !self.stateful || self.h.0.len() == 0 {
+            self.h.0 = Arr2d::zeros((batch_size, self.hidden_size));
+            self.c.0 = self.h.0.clone();
+        }
+        for (layer, xst, mut hst) in izip!(
+            self.layers.iter_mut(),
+            xs.axis_iter(Axis(1)),
+            hs.axis_iter_mut(Axis(1))
+        ) {
+            let (_h, _c) = layer.forward(xst.to_owned(), self.h.0.clone(), self.c.0.clone());
+            hst.assign(&_h);
+            self.h.0 = _h;
+            self.c.0 = _c;
+        }
+        hs
+    }
+    pub fn backward<D: Dimension>(&mut self, dhs: Array<f32, D>) -> Arr3d {
+        let batch_size = dhs.len() / (self.time_size * self.hidden_size);
+        let dhs = dhs
+            .into_shape((batch_size, self.time_size, self.hidden_size))
+            .unwrap();
+        let mut dxs = Arr3d::zeros((batch_size, self.time_size, self.channel_size));
+        /// このdh, dcはLSTMの相互入出力に関する勾配
+        /// hに関しては、上流から来るdhsもあるが、全く別物
+        let mut dh = Arr2d::zeros((batch_size, self.hidden_size));
+        let mut dc = dh.clone();
+        for (layer, mut dxt, dht) in (izip!(
+            self.layers.iter_mut(),
+            dxs.axis_iter_mut(Axis(1)),
+            dhs.axis_iter(Axis(1))
+        ))
+        .rev()
+        {
+            /// 上流からのdhtと、横からのdh(先頭ではゼロ)を加算する
+            let (_dx, _dh, _dc) = layer.backward(dht.to_owned() + dh, dc);
+            dh = _dh;
+            dc = _dc;
+            dxt.assign(&_dx);
+        }
+        dxs
     }
 }
