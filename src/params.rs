@@ -1,4 +1,5 @@
 use crate::types::*;
+use ndarray::{Array, Dimension};
 use std::cell::{Ref, RefCell};
 
 pub trait Param<T: Default> {
@@ -31,21 +32,25 @@ impl<T: Default> Param<T> for P1<T> {
         self._p.borrow()
     }
 }
-impl P1<Arr1d> {
-    pub fn update(&self) {
-        // let g = self.grads.borrow()[0].clone() * 0.1;
-        let sum = Arr1d::zeros(self.grads.borrow()[0].dim());
-        let g = self.grads.borrow().iter().fold(sum, |sum, x| sum + x * 0.1);
-        *self._p.borrow_mut() -= &g;
+
+impl<D: Dimension> P1<Array<f32, D>> {
+    pub fn grads_sum(&self) -> Array<f32, D> {
+        let sum = Array::zeros(self.grads.borrow()[0].dim());
+        let g = self.grads.borrow().iter().fold(sum, |sum, x| sum + x);
         *self.grads.borrow_mut() = Vec::new();
+        g
     }
-}
-impl P1<Arr2d> {
     pub fn update(&self) {
-        // let g = self.grads.borrow()[0].clone() * 0.1;
-        let sum = Arr2d::zeros(self.grads.borrow()[0].dim());
-        let g = self.grads.borrow().iter().fold(sum, |sum, x| sum + x * 0.1);
+        self.update_lr(0.1);
+    }
+    pub fn update_lr(&self, lr: f32) {
+        let g = self.grads_sum() * lr;
         *self._p.borrow_mut() -= &g;
-        *self.grads.borrow_mut() = Vec::new();
+    }
+    pub fn update_clip_lr(&self, clip: f32, lr: f32) {
+        let mut g = self.grads_sum();
+        let norm = g.map(|x| x * x).sum();
+        g *= (clip / (norm + 1e-6)).min(1.0) * lr;
+        *self._p.borrow_mut() -= &g;
     }
 }

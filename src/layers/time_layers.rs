@@ -366,4 +366,8 @@ impl<'a> TimeLSTM<'a> {
         }
         dxs
     }
+    pub fn reset_state(&mut self) {
+        self.h = Default::default();
+        self.c = Default::default();
+    }
 }

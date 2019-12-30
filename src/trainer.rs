@@ -8,7 +8,7 @@ extern crate ndarray;
 use ndarray::{s, Array, Array1, Array2, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
 pub struct RnnlmTrainer<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> {
-    model: R,
+    pub model: R,
     params: &'a P,
     optimizer: O,
     time_idx: usize,
@@ -61,14 +61,15 @@ impl<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<'a, R, P, O> {
             for (iter, (batch_x, batch_t)) in x_batches.zip(t_batches).enumerate() {
                 eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
                 self.model.backward();
-                self.params.update();
+                self.params.update_clip_lr(0.1, 20.0); // TODO optimizerを設定して外部から切替
+                                                       // self.params.update();
                 if (iter + 1) % eval_interval == 0 {
                     let ppl = (eval_loss / eval_interval as f32).exp();
                     let elapsed_time = std::time::Instant::now() - start_time;
                     println!(
                         "|epoch {}| iter {}/{} | time {}[s] | perplexity {}",
                         epoch,
-                        iter,
+                        iter + 1,
                         max_iters,
                         elapsed_time.as_secs(),
                         ppl
