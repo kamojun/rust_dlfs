@@ -261,11 +261,11 @@ impl<'a> LSTM<'a> {
         let mut dA = Arr2d::zeros((batch_size, hidden_size * 4));
         let mut chunk = dA.axis_chunks_iter_mut(Axis(1), hidden_size);
         let mut assign = |d| chunk.next().unwrap().assign(&d);
-        // di, df, do, dgの順に格納していく
-        assign(&ds * &cache.g * cache.i.dsigmoid());
+        // df, dg, di, doの順に格納していく
         assign(&ds * &cache.c_prev * cache.f.dsigmoid());
+        assign(&ds * &cache.i * cache.g.dtanh());
+        assign(&ds * &cache.g * cache.i.dsigmoid());
         assign(&dh_next * &c_next_tanh * cache.o.dsigmoid());
-        assign(&ds * &cache.i * cache.o.dtanh());
         // dAから、wh, wx, bの勾配を計算し格納
         self.wh.store(cache.h_prev.t().dot(&dA));
         self.wx.store(cache.x.t().dot(&dA));
