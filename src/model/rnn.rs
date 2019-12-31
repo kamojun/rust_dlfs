@@ -187,7 +187,9 @@ impl<'a> Rnnlm for SimpleRnnlmLSTM<'a> {
         let dout = self.rnn.backward(dout);
         self.embed.backward(dout);
     }
-    fn reset_state(&mut self) {}
+    fn reset_state(&mut self) {
+        self.rnn.reset_state();
+    }
 }
 impl<'a> SimpleRnnlmLSTM<'a> {
     pub fn new(

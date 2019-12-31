@@ -39,6 +39,10 @@ pub fn train() {
 
     trainer.model.reset_state();
     // テストデータで評価(TODO)
+    let corpus_test =
+        read_csv::<usize>("./data/ptb/test_corpus.csv").expect("error in reading corpus");
+    let test_ppl = trainer.eval(corpus_test, BATCH_SIZE, TIME_SIZE);
+    putsd!(test_ppl);
 }
 
 #[test]

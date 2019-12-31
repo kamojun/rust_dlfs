@@ -82,6 +82,29 @@ impl<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<'a, R, P, O> {
             }
         }
     }
+    pub fn eval(&mut self, corpus_test: Vec<usize>, batch_size: usize, time_size: usize) -> f32 {
+        let data_size = corpus_test.len() - 1;
+        //  (batch_size, time_size)型のデータを学習に用いる
+        let mut eval_loss = 0.0;
+        let max_iters = data_size / (batch_size * time_size);
+        let time_shift = max_iters * time_size;
+
+        let xsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| {
+            corpus_test[i * time_shift + j]
+        });
+        let tsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| {
+            corpus_test[i * time_shift + j + 1]
+        });
+        let x_batches = xsa.axis_chunks_iter(Axis(1), time_size);
+        let t_batches = tsa.axis_chunks_iter(Axis(1), time_size);
+        for (iter, (batch_x, batch_t)) in x_batches.zip(t_batches).enumerate() {
+            eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
+            if (iter + 1) % 10 == 0 {
+                println!("|iter {}/{} |", iter + 1, max_iters);
+            }
+        }
+        (eval_loss / max_iters as f32).exp() // ppl
+    }
 }
 
 /// データ型をf32から、単語idのusizeにしようとしたら、どうしても
