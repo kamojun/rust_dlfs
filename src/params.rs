@@ -36,9 +36,7 @@ impl<T: Default> Param<T> for P1<T> {
 impl<D: Dimension> P1<Array<f32, D>> {
     pub fn grads_sum(&self) -> Array<f32, D> {
         let sum = Array::zeros(self.grads.borrow()[0].dim());
-        let g = self.grads.borrow().iter().fold(sum, |sum, x| sum + x);
-        *self.grads.borrow_mut() = Vec::new();
-        g
+        self.grads.borrow().iter().fold(sum, |sum, x| sum + x)
     }
     pub fn update(&self) {
         self.update_lr(0.1);
@@ -46,11 +44,13 @@ impl<D: Dimension> P1<Array<f32, D>> {
     pub fn update_lr(&self, lr: f32) {
         let g = self.grads_sum() * lr;
         *self._p.borrow_mut() -= &g;
+        *self.grads.borrow_mut() = Vec::new();
     }
     pub fn update_clip_lr(&self, clip: f32, lr: f32) {
         let mut g = self.grads_sum();
         let norm = g.map(|x| x * x).sum();
         g *= (clip / (norm + 1e-6)).min(1.0) * lr;
         *self._p.borrow_mut() -= &g;
+        *self.grads.borrow_mut() = Vec::new();
     }
 }

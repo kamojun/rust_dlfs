@@ -1,5 +1,6 @@
 use crate::layers::loss_layer::*;
 use crate::layers::time_layers::*;
+use crate::math::Norm;
 use crate::optimizer::*;
 use crate::params::*;
 use crate::types::*;
@@ -20,6 +21,9 @@ pub trait RnnlmParams {
     fn update_clip_lr(&self, clip: f32, lr: f32) {
         unimplemented!();
     }
+    fn update_clipgrads(&self, clip: f32, lr: f32) {
+        unimplemented!();
+    }
 }
 impl RnnlmParams for SimpleRnnlmParams {
     fn update(&self) {
@@ -37,6 +41,23 @@ impl RnnlmParams for SimpleRnnlmParams {
         self.rnn_b.update_clip_lr(clip, lr);
         self.affine_w.update_clip_lr(clip, lr);
         self.affine_b.update_clip_lr(clip, lr);
+    }
+    fn update_clipgrads(&self, clip: f32, lr: f32) {
+        let mut norm = 0.0;
+        norm += self.embed_w.grads_sum().norm();
+        norm += self.rnn_wx.grads_sum().norm();
+        norm += self.rnn_wh.grads_sum().norm();
+        norm += self.rnn_b.grads_sum().norm();
+        norm += self.affine_w.grads_sum().norm();
+        norm += self.affine_b.grads_sum().norm();
+        norm = norm.sqrt();
+        let rate = (clip / (norm + 1e-6)).min(1.0) * lr;
+        self.embed_w.update_lr(rate);
+        self.rnn_wx.update_lr(rate);
+        self.rnn_wh.update_lr(rate);
+        self.rnn_b.update_lr(rate);
+        self.affine_w.update_lr(rate);
+        self.affine_b.update_lr(rate);
     }
 }
 

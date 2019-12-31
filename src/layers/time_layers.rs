@@ -1,5 +1,6 @@
 use crate::functions::*;
 use crate::layers::*;
+use crate::math::Derivative;
 use crate::params::*;
 use crate::types::*;
 use itertools::izip;
@@ -217,20 +218,6 @@ struct LSTM<'a> {
     /// (4*hidden, )
     b: &'a P1<Arr1d>,
     cache: CacheLSTM,
-}
-trait Derivative {
-    fn dsigmoid(&self) -> Self;
-    fn dtanh(&self) -> Self;
-}
-impl<D: Dimension> Derivative for Array<f32, D> {
-    /// self = sigmoid(x)のとき、dself/dx = self*(1-self)となる
-    fn dsigmoid(&self) -> Self {
-        self * &(1.0 - self)
-    }
-    /// self = tanh(x)のとき、dself/dx = 1-self**2となる
-    fn dtanh(&self) -> Self {
-        1.0 - self * self
-    }
 }
 
 impl<'a> LSTM<'a> {

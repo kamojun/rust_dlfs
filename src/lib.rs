@@ -19,6 +19,7 @@ pub mod macros;
 pub mod functions;
 pub mod io;
 pub mod layers;
+pub mod math;
 pub mod model;
 pub mod optimizer;
 pub mod params;
