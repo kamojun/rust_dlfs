@@ -328,11 +328,8 @@ impl<'a> TimeLSTM<'a> {
         }
         hs
     }
-    pub fn backward<D: Dimension>(&mut self, dhs: Array<f32, D>) -> Arr3d {
+    pub fn backward(&mut self, dhs: Arr3d) -> Arr3d {
         let batch_size = dhs.len() / (self.time_size * self.hidden_size);
-        let dhs = dhs
-            .into_shape((batch_size, self.time_size, self.hidden_size))
-            .unwrap();
         let mut dxs = Arr3d::zeros((batch_size, self.time_size, self.channel_size));
         /// このdh, dcはLSTMの相互入出力に関する勾配
         /// hに関しては、上流から来るdhsもあるが、全く別物
@@ -352,6 +349,11 @@ impl<'a> TimeLSTM<'a> {
             dxt.assign(&_dx);
         }
         dxs
+    }
+    pub fn conv_2d_3d(&self, x: Arr2d) -> Arr3d {
+        let batch_size = x.len() / (self.time_size * self.hidden_size);
+        x.into_shape((batch_size, self.time_size, self.hidden_size))
+            .unwrap()
     }
     pub fn reset_state(&mut self) {
         self.h = Default::default();

@@ -1,11 +1,12 @@
 use crate::layers::loss_layer::*;
 use crate::layers::time_layers::*;
+use crate::layers::Dropout;
 use crate::math::Norm;
 use crate::optimizer::*;
 use crate::params::*;
 use crate::types::*;
 use crate::util::randarr2d;
-use ndarray::{Array, Array2, Axis, RemoveAxis};
+use ndarray::{Array, Array2, Axis, Ix2, Ix3, RemoveAxis};
 
 pub trait Rnnlm {
     fn forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32;
@@ -15,49 +16,38 @@ pub trait Rnnlm {
     }
 }
 pub trait RnnlmParams {
-    fn update(&self) {
-        unimplemented!();
+    fn update_lr(&self, lr: f32) {
+        for param in self.params() {
+            param.update_lr(lr);
+        }
     }
     fn update_clip_lr(&self, clip: f32, lr: f32) {
-        unimplemented!();
+        for param in self.params() {
+            param.update_clip_lr(clip, lr);
+        }
     }
     fn update_clipgrads(&self, clip: f32, lr: f32) {
-        unimplemented!();
+        let norm = self
+            .params()
+            .iter()
+            .map(|x| x.grads_norm_squared())
+            .sum::<f32>()
+            .sqrt();
+        let rate = (clip / (norm + 1e-6)).min(1.0) * lr;
+        self.update_lr(rate);
     }
+    fn params(&self) -> Vec<&Update>;
 }
 impl RnnlmParams for SimpleRnnlmParams {
-    fn update(&self) {
-        self.embed_w.update();
-        self.rnn_wx.update();
-        self.rnn_wh.update();
-        self.rnn_b.update();
-        self.affine_w.update();
-        self.affine_b.update();
-    }
-    fn update_clip_lr(&self, clip: f32, lr: f32) {
-        self.embed_w.update_clip_lr(clip, lr);
-        self.rnn_wx.update_clip_lr(clip, lr);
-        self.rnn_wh.update_clip_lr(clip, lr);
-        self.rnn_b.update_clip_lr(clip, lr);
-        self.affine_w.update_clip_lr(clip, lr);
-        self.affine_b.update_clip_lr(clip, lr);
-    }
-    fn update_clipgrads(&self, clip: f32, lr: f32) {
-        let mut norm = 0.0;
-        norm += self.embed_w.grads_sum().norm();
-        norm += self.rnn_wx.grads_sum().norm();
-        norm += self.rnn_wh.grads_sum().norm();
-        norm += self.rnn_b.grads_sum().norm();
-        norm += self.affine_w.grads_sum().norm();
-        norm += self.affine_b.grads_sum().norm();
-        norm = norm.sqrt();
-        let rate = (clip / (norm + 1e-6)).min(1.0) * lr;
-        self.embed_w.update_lr(rate);
-        self.rnn_wx.update_lr(rate);
-        self.rnn_wh.update_lr(rate);
-        self.rnn_b.update_lr(rate);
-        self.affine_w.update_lr(rate);
-        self.affine_b.update_lr(rate);
+    fn params(&self) -> Vec<&Update> {
+        vec![
+            &self.embed_w,
+            &self.rnn_wx,
+            &self.rnn_wh,
+            &self.rnn_b,
+            &self.affine_w,
+            &self.affine_b,
+        ]
     }
 }
 
@@ -184,6 +174,7 @@ impl<'a> Rnnlm for SimpleRnnlmLSTM<'a> {
     fn backward(&mut self) {
         let dout = self.loss_layer.backward();
         let dout = self.affine.backward(dout);
+        let dout = self.rnn.conv_2d_3d(dout);
         let dout = self.rnn.backward(dout);
         self.embed.backward(dout);
     }
@@ -211,5 +202,132 @@ impl<'a> SimpleRnnlmLSTM<'a> {
             affine,
             loss_layer: Default::default(),
         }
+    }
+}
+
+pub struct RnnlmLSTM<'a> {
+    vocab_size: usize,
+    wordvec_size: usize,
+    hidden_size: usize,
+    embed: TimeEmbedding<'a>,
+    dropouts: [Dropout<Ix3>; 3],
+    rnn: [TimeLSTM<'a>; 2],
+    affine: TimeAffine<'a>,
+    loss_layer: SoftMaxWithLoss,
+}
+impl RnnlmParams for RnnlmLSTMParams {
+    fn params(&self) -> Vec<&Update> {
+        vec![
+            &self.embed_w,
+            &self.lstm_wx1,
+            &self.lstm_wh1,
+            &self.lstm_b1,
+            &self.lstm_wx2,
+            &self.lstm_wh2,
+            &self.lstm_b2,
+            &self.affine_b,
+        ]
+    }
+}
+
+pub struct RnnlmLSTMParams {
+    embed_w: P1<Arr2d>,
+    lstm_wx1: P1<Arr2d>,
+    lstm_wh1: P1<Arr2d>,
+    lstm_b1: P1<Arr1d>,
+    lstm_wx2: P1<Arr2d>,
+    lstm_wh2: P1<Arr2d>,
+    lstm_b2: P1<Arr1d>,
+    affine_b: P1<Arr1d>,
+}
+impl RnnlmLSTMParams {
+    /// simplparamsでwordvec_sizeというのがあったが、これはhidden_sizeと共通にさせる
+    /// これにより、embed_wとaffine_wを共有させる
+    pub fn new(vocab_size: usize, hidden_size: usize) -> Self {
+        let h = hidden_size;
+        let embed_w = P1::new(randarr2d(vocab_size, h) / 100.0);
+        let mat_init = |m, n| randarr2d(m, n) / (m as f32).sqrt();
+        let lstm_wx1 = P1::new(mat_init(h, 4 * h));
+        let lstm_wh1 = P1::new(mat_init(h, 4 * h));
+        let lstm_b1 = P1::new(Arr1d::zeros((4 * h,)));
+        let lstm_wx2 = P1::new(mat_init(h, 4 * h));
+        let lstm_wh2 = P1::new(mat_init(h, 4 * h));
+        let lstm_b2 = P1::new(Arr1d::zeros((4 * h,)));
+        let affine_b = P1::new(Arr1d::zeros((vocab_size,)));
+        Self {
+            embed_w,
+            lstm_wx1,
+            lstm_wh1,
+            lstm_b1,
+            lstm_wx2,
+            lstm_wh2,
+            lstm_b2,
+            affine_b,
+        }
+    }
+}
+impl<'a> RnnlmLSTM<'a> {
+    pub fn new(
+        vocab_size: usize,
+        wordvec_size: usize,
+        hidden_size: usize,
+        time_size: usize,
+        dropout_ratio: f32,
+        params: &'a RnnlmLSTMParams,
+    ) -> Self {
+        let embed = TimeEmbedding::new(&params.embed_w);
+        let lstm1 = TimeLSTM::new(
+            &params.lstm_wx1,
+            &params.lstm_wh1,
+            &params.lstm_b1,
+            time_size,
+        );
+        let lstm2 = TimeLSTM::new(
+            &params.lstm_wx2,
+            &params.lstm_wh2,
+            &params.lstm_b2,
+            time_size,
+        );
+        let affine = TimeAffine::new(&params.embed_w, &params.affine_b); // TODO embed_wを転置して、(hidden_size, vocab_size)にしなければならない。
+        Self {
+            vocab_size,
+            wordvec_size,
+            hidden_size,
+            embed,
+            dropouts: [
+                Dropout::new(dropout_ratio),
+                Dropout::new(dropout_ratio),
+                Dropout::new(dropout_ratio),
+            ],
+            rnn: [lstm1, lstm2],
+            affine,
+            loss_layer: Default::default(),
+        }
+    }
+}
+
+impl<'a> Rnnlm for RnnlmLSTM<'a> {
+    fn forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32 {
+        let mut x = self.embed.forward(x);
+        for i in 0..2 {
+            x = self.dropouts[i].train_forward(x);
+            x = self.rnn[i].forward(x);
+        }
+        let x = remove_axis(self.dropouts[2].train_forward(x));
+        let x = self.affine.forward(x);
+        let batch_time_size = t.len();
+        let t = t.into_shape((batch_time_size,)).unwrap();
+        self.loss_layer.forward2(x, t)
+    }
+    fn backward(&mut self) {
+        let dout2d = self.loss_layer.backward();
+        let dout2d = self.affine.backward(dout2d);
+        let mut dout3d = self.rnn[1].conv_2d_3d(dout2d);
+        dout3d = self.dropouts[2].backward(dout3d);
+        for i in (0..2).rev() {
+            dout3d = self.rnn[i].backward(dout3d);
+            dout3d = self.dropouts[i].backward(dout3d);
+        }
+        self.embed.backward(dout3d);
     }
 }

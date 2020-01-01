@@ -276,3 +276,24 @@ impl Embedding2d {
         }
     }
 }
+
+pub struct Dropout<D: Dimension> {
+    mask: Array<f32, D>,
+    dropout_ratio: f32,
+}
+impl<D: Dimension> Dropout<D> {
+    pub fn new(dropout_ratio: f32) -> Self {
+        Self {
+            dropout_ratio,
+            mask: Default::default(),
+        }
+    }
+    pub fn train_forward(&mut self, xs: Array<f32, D>) -> Array<f32, D> {
+        let flg = randarr(xs.shape()).mapv(|x| if (x > self.dropout_ratio) { 1.0 } else { 0.0 });
+        self.mask = flg / (1.0 - self.dropout_ratio);
+        xs * &self.mask
+    }
+    pub fn backward(&self, dout: Array<f32, D>) -> Array<f32, D> {
+        dout * &self.mask
+    }
+}

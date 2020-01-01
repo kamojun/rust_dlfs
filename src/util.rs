@@ -134,6 +134,17 @@ pub fn randarr2d(m: usize, n: usize) -> Arr2d {
 pub fn randarr1d(m: usize) -> Arr1d {
     Array::<f32, _>::random((m,), StandardNormal)
 }
+pub fn randarr<D: Dimension>(dim: &[usize]) -> Array<f32, D> {
+    // Array::<f32, _>::random(dim, StandardNormal)
+    Array::<f32, _>::random(dim, StandardNormal)
+        .into_dimensionality()
+        .unwrap()
+    // Default::default()
+}
+#[test]
+fn test_randarr() {
+    let a = randarr::<Ix2>(&[1, 2]);
+}
 
 extern crate num_traits;
 use num_traits::Zero;

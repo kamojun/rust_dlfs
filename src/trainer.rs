@@ -63,7 +63,6 @@ impl<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<'a, R, P, O> {
                 self.model.backward();
                 self.params.update_clipgrads(0.25, 20.0);
                 // self.params.update_clip_lr(0.1, 20.0); // TODO optimizerを設定して外部から切替
-                // self.params.update();
                 if (iter + 1) % eval_interval == 0 {
                     let ppl = (eval_loss / eval_interval as f32).exp();
                     let elapsed_time = std::time::Instant::now() - start_time;

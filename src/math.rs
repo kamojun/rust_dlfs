@@ -15,10 +15,10 @@ impl<D: Dimension> Derivative for Array<f32, D> {
     }
 }
 pub trait Norm {
-    fn norm(&self) -> f32;
+    fn norm2(&self) -> f32;
 }
 impl<D: Dimension> Norm for Array<f32, D> {
-    fn norm(&self) -> f32 {
+    fn norm2(&self) -> f32 {
         self.map(|x| x * x).sum()
     }
 }

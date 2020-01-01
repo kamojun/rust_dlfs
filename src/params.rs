@@ -1,3 +1,4 @@
+use crate::math::*;
 use crate::types::*;
 use ndarray::{Array, Dimension};
 use std::cell::{Ref, RefCell};
@@ -38,15 +39,23 @@ impl<D: Dimension> P1<Array<f32, D>> {
         let sum = Array::zeros(self.grads.borrow()[0].dim());
         self.grads.borrow().iter().fold(sum, |sum, x| sum + x)
     }
-    pub fn update(&self) {
-        self.update_lr(0.1);
+}
+pub trait Update {
+    fn grads_norm_squared(&self) -> f32;
+    fn update_lr(&self, lr: f32);
+    fn update_clip_lr(&self, clip: f32, lr: f32);
+}
+impl<D: Dimension> Update for P1<Array<f32, D>> {
+    fn grads_norm_squared(&self) -> f32 {
+        /// 勾配の和のnormの二乗を返す。
+        self.grads_sum().norm2()
     }
-    pub fn update_lr(&self, lr: f32) {
+    fn update_lr(&self, lr: f32) {
         let g = self.grads_sum() * lr;
         *self._p.borrow_mut() -= &g;
         *self.grads.borrow_mut() = Vec::new();
     }
-    pub fn update_clip_lr(&self, clip: f32, lr: f32) {
+    fn update_clip_lr(&self, clip: f32, lr: f32) {
         let mut g = self.grads_sum();
         let norm = g.map(|x| x * x).sum();
         g *= (clip / (norm + 1e-6)).min(1.0) * lr;
