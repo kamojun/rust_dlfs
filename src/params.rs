@@ -3,8 +3,8 @@ use crate::types::*;
 use ndarray::{Array, Dimension};
 use std::cell::{Ref, RefCell};
 
-pub trait Param<T: Default> {
-    fn new(p: T) -> Self;
+pub trait Param<T> {
+    // fn new(p: T) -> Self;
     fn store(&self, g: T);
     fn p(&self) -> Ref<T>;
 }
@@ -18,14 +18,19 @@ pub struct P1<T: Default> {
     // /// optimizerが使う情報
     // cache: RefCell<Vec<T>>,
 }
-
-impl<T: Default> Param<T> for P1<T> {
-    fn new(p: T) -> Self {
+impl<T: Default> P1<T> {
+    pub fn new(p: T) -> Self {
         Self {
             _p: RefCell::new(p),
             ..Default::default()
         }
     }
+    pub fn t(&self) -> P2<T> {
+        P2::new(&self)
+    }
+}
+
+impl<T: Default> Param<T> for P1<T> {
     fn store(&self, g: T) {
         self.grads.borrow_mut().push(g);
     }
@@ -61,5 +66,30 @@ impl<D: Dimension> Update for P1<Array<f32, D>> {
         g *= (clip / (norm + 1e-6)).min(1.0) * lr;
         *self._p.borrow_mut() -= &g;
         *self.grads.borrow_mut() = Vec::new();
+    }
+}
+
+pub struct P2<'a, T: Default> {
+    /// データ本体
+    _p: RefCell<T>,
+    /// 関連付けるP1
+    p1: &'a P1<T>,
+}
+
+impl<'a, T: Default> P2<'a, T> {
+    pub fn new(p1: &'a P1<T>) -> Self {
+        Self {
+            _p: Default::default(),
+            p1,
+        }
+    }
+}
+impl<'a, A: Default + Copy, D: Dimension> Param<Array<A, D>> for P2<'a, Array<A, D>> {
+    fn store(&self, g: Array<A, D>) {
+        self.p1.grads.borrow_mut().push(g.t().to_owned());
+    }
+    fn p(&self) -> Ref<Array<A, D>> {
+        *self._p.borrow_mut() = self.p1.p().t().to_owned();
+        self._p.borrow()
     }
 }

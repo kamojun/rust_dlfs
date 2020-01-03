@@ -215,7 +215,7 @@ pub struct RnnlmLSTM<'a> {
     affine: TimeAffine<'a>,
     loss_layer: SoftMaxWithLoss,
 }
-impl RnnlmParams for RnnlmLSTMParams {
+impl<'a> RnnlmParams for RnnlmLSTMParams<'a> {
     fn params(&self) -> Vec<&Update> {
         vec![
             &self.embed_w,
@@ -230,7 +230,7 @@ impl RnnlmParams for RnnlmLSTMParams {
     }
 }
 
-pub struct RnnlmLSTMParams {
+pub struct RnnlmLSTMParams<'a> {
     embed_w: P1<Arr2d>,
     lstm_wx1: P1<Arr2d>,
     lstm_wh1: P1<Arr2d>,
@@ -238,9 +238,10 @@ pub struct RnnlmLSTMParams {
     lstm_wx2: P1<Arr2d>,
     lstm_wh2: P1<Arr2d>,
     lstm_b2: P1<Arr1d>,
+    affine_w: P2<'a, Arr2d>,
     affine_b: P1<Arr1d>,
 }
-impl RnnlmLSTMParams {
+impl<'a> RnnlmLSTMParams<'a> {
     /// simplparamsでwordvec_sizeというのがあったが、これはhidden_sizeと共通にさせる
     /// これにより、embed_wとaffine_wを共有させる
     pub fn new(vocab_size: usize, hidden_size: usize) -> Self {
@@ -253,6 +254,7 @@ impl RnnlmLSTMParams {
         let lstm_wx2 = P1::new(mat_init(h, 4 * h));
         let lstm_wh2 = P1::new(mat_init(h, 4 * h));
         let lstm_b2 = P1::new(Arr1d::zeros((4 * h,)));
+        let affine_w = embed_w.t();
         let affine_b = P1::new(Arr1d::zeros((vocab_size,)));
         Self {
             embed_w,
@@ -262,6 +264,7 @@ impl RnnlmLSTMParams {
             lstm_wx2,
             lstm_wh2,
             lstm_b2,
+            affine_w,
             affine_b,
         }
     }
@@ -288,7 +291,7 @@ impl<'a> RnnlmLSTM<'a> {
             &params.lstm_b2,
             time_size,
         );
-        let affine = TimeAffine::new(&params.embed_w, &params.affine_b); // TODO embed_wを転置して、(hidden_size, vocab_size)にしなければならない。
+        let affine = TimeAffine::new(&params.affine_w, &params.affine_b); // TODO embed_wを転置して、(hidden_size, vocab_size)にしなければならない。
         Self {
             vocab_size,
             wordvec_size,

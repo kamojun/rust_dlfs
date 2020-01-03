@@ -150,12 +150,12 @@ impl<'a> TimeEmbedding<'a> {
 }
 
 pub struct TimeAffine<'a> {
-    w: &'a P1<Arr2d>,
+    w: &'a Param<Arr2d>,
     b: &'a P1<Arr1d>,
     x: Arr2d,
 }
 impl<'a> TimeAffine<'a> {
-    pub fn new(w: &'a P1<Arr2d>, b: &'a P1<Arr1d>) -> Self {
+    pub fn new(w: &'a Param<Arr2d>, b: &'a P1<Arr1d>) -> Self {
         Self {
             w,
             b,
