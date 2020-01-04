@@ -2,6 +2,7 @@ use crate::math::*;
 use crate::types::*;
 use ndarray::{Array, Dimension};
 use std::cell::{Ref, RefCell};
+use std::ops::Deref;
 use std::rc::Rc;
 
 pub trait Param<T> {
@@ -24,6 +25,12 @@ impl<T: Default> P1<T> {
         Self {
             _p: RefCell::new(p),
             ..Default::default()
+        }
+    }
+    pub fn t(self) -> P2<T> {
+        P2 {
+            _p: Default::default(),
+            p1: self,
         }
     }
 }
@@ -71,7 +78,7 @@ impl<D: Dimension> Update for P1<Array<f32, D>> {
 pub struct P2<T: Default> {
     /// データ本体
     _p: RefCell<T>,
-    /// 関連付けるP1
+    /// 関連付けるP1。これを先に作る。
     p1: P1<T>,
 }
 
@@ -95,11 +102,11 @@ impl<'a, A: Default + Copy, D: Dimension> Param<Array<A, D>> for P2<Array<A, D>>
         self._p.borrow()
     }
 }
-impl<'a, A: Default + Copy, D: Dimension> Param<Array<A, D>> for Rc<P1<Array<A, D>>> {
-    fn store(&self, g: Array<A, D>) {
-        self.as_ref().store(g);
-    }
-    fn p(&self) -> Ref<Array<A, D>> {
-        self.as_ref().p()
-    }
-}
+// impl<'a, A: Default + Copy, D: Dimension> Param<Array<A, D>> for Rc<P1<Array<A, D>>> {
+//     fn store(&self, g: Array<A, D>) {
+//         self.as_ref().store(g);
+//     }
+//     fn p(&self) -> Ref<Array<A, D>> {
+//         self.as_ref().p()
+//     }
+// }

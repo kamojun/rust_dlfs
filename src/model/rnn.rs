@@ -219,7 +219,7 @@ pub struct RnnlmLSTM<'a> {
 impl<'a> RnnlmParams for RnnlmLSTMParams {
     fn params(&self) -> Vec<&Update> {
         vec![
-            self.embed_w.t(),
+            self.affine_w.t(),
             &self.lstm_wx1,
             &self.lstm_wh1,
             &self.lstm_b1,
@@ -232,13 +232,14 @@ impl<'a> RnnlmParams for RnnlmLSTMParams {
 }
 
 pub struct RnnlmLSTMParams {
-    embed_w: P2<Arr2d>,
+    // embed_w: P2<Arr2d>,
     lstm_wx1: P1<Arr2d>,
     lstm_wh1: P1<Arr2d>,
     lstm_b1: P1<Arr1d>,
     lstm_wx2: P1<Arr2d>,
     lstm_wh2: P1<Arr2d>,
     lstm_b2: P1<Arr1d>,
+    affine_w: P2<Arr2d>,
     affine_b: P1<Arr1d>,
 }
 impl<'a> RnnlmLSTMParams {
@@ -246,23 +247,26 @@ impl<'a> RnnlmLSTMParams {
     /// これにより、embed_wとaffine_wを共有させる
     pub fn new(vocab_size: usize, hidden_size: usize) -> Self {
         let h = hidden_size;
-        let embed_w = P2::new(randarr2d(vocab_size, h) / 100.0);
-        let mat_init = |m, n| randarr2d(m, n) / (m as f32).sqrt();
-        let lstm_wx1 = P1::new(mat_init(h, 4 * h));
-        let lstm_wh1 = P1::new(mat_init(h, 4 * h));
+        let embed_w = P1::new(randarr2d(vocab_size, h) / 100.0);
+        // let mat_init = |m, n| randarr2d(m, n) / (m as f32).sqrt();
+        let mat_h4h = || randarr2d(h, 4 * h) / (h as f32).sqrt();
+        let lstm_wx1 = P1::new(mat_h4h());
+        let lstm_wh1 = P1::new(mat_h4h());
         let lstm_b1 = P1::new(Arr1d::zeros((4 * h,)));
-        let lstm_wx2 = P1::new(mat_init(h, 4 * h));
-        let lstm_wh2 = P1::new(mat_init(h, 4 * h));
+        let lstm_wx2 = P1::new(mat_h4h());
+        let lstm_wh2 = P1::new(mat_h4h());
         let lstm_b2 = P1::new(Arr1d::zeros((4 * h,)));
+        let affine_w = embed_w.t();
         let affine_b = P1::new(Arr1d::zeros((vocab_size,)));
         Self {
-            embed_w,
+            // embed_w,
             lstm_wx1,
             lstm_wh1,
             lstm_b1,
             lstm_wx2,
             lstm_wh2,
             lstm_b2,
+            affine_w,
             affine_b,
         }
     }
@@ -276,7 +280,7 @@ impl<'a> RnnlmLSTM<'a> {
         dropout_ratio: f32,
         params: &'a RnnlmLSTMParams,
     ) -> Self {
-        let embed = TimeEmbedding::new(&params.embed_w);
+        let embed = TimeEmbedding::new(params.affine_w.t());
         let lstm1 = TimeLSTM::new(
             &params.lstm_wx1,
             &params.lstm_wh1,
@@ -289,7 +293,7 @@ impl<'a> RnnlmLSTM<'a> {
             &params.lstm_b2,
             time_size,
         );
-        let affine = TimeAffine::new(params.embed_w.t(), &params.affine_b); // TODO embed_wを転置して、(hidden_size, vocab_size)にしなければならない。
+        let affine = TimeAffine::new(&params.affine_w, &params.affine_b);
         Self {
             vocab_size,
             wordvec_size,
