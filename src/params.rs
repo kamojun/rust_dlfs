@@ -2,6 +2,7 @@ use crate::math::*;
 use crate::types::*;
 use ndarray::{Array, Dimension};
 use std::cell::{Ref, RefCell};
+use std::rc::Rc;
 
 pub trait Param<T> {
     // fn new(p: T) -> Self;
@@ -24,9 +25,6 @@ impl<T: Default> P1<T> {
             _p: RefCell::new(p),
             ..Default::default()
         }
-    }
-    pub fn t(&self) -> P2<T> {
-        P2::new(&self)
     }
 }
 
@@ -69,27 +67,39 @@ impl<D: Dimension> Update for P1<Array<f32, D>> {
     }
 }
 
-pub struct P2<'a, T: Default> {
+/// これにP1を包むと転置した状態でアクセスできる
+pub struct P2<T: Default> {
     /// データ本体
     _p: RefCell<T>,
     /// 関連付けるP1
-    p1: &'a P1<T>,
+    p1: P1<T>,
 }
 
-impl<'a, T: Default> P2<'a, T> {
-    pub fn new(p1: &'a P1<T>) -> Self {
+impl<T: Default> P2<T> {
+    pub fn new(p1: T) -> Self {
         Self {
             _p: Default::default(),
-            p1,
+            p1: P1::new(p1),
         }
     }
+    pub fn t(&self) -> &P1<T> {
+        &self.p1
+    }
 }
-impl<'a, A: Default + Copy, D: Dimension> Param<Array<A, D>> for P2<'a, Array<A, D>> {
+impl<'a, A: Default + Copy, D: Dimension> Param<Array<A, D>> for P2<Array<A, D>> {
     fn store(&self, g: Array<A, D>) {
         self.p1.grads.borrow_mut().push(g.t().to_owned());
     }
     fn p(&self) -> Ref<Array<A, D>> {
         *self._p.borrow_mut() = self.p1.p().t().to_owned();
         self._p.borrow()
+    }
+}
+impl<'a, A: Default + Copy, D: Dimension> Param<Array<A, D>> for Rc<P1<Array<A, D>>> {
+    fn store(&self, g: Array<A, D>) {
+        self.as_ref().store(g);
+    }
+    fn p(&self) -> Ref<Array<A, D>> {
+        self.as_ref().p()
     }
 }

@@ -7,6 +7,7 @@ use crate::params::*;
 use crate::types::*;
 use crate::util::randarr2d;
 use ndarray::{Array, Array2, Axis, Ix2, Ix3, RemoveAxis};
+use std::rc::Rc;
 
 pub trait Rnnlm {
     fn forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32;
@@ -215,10 +216,10 @@ pub struct RnnlmLSTM<'a> {
     affine: TimeAffine<'a>,
     loss_layer: SoftMaxWithLoss,
 }
-impl<'a> RnnlmParams for RnnlmLSTMParams<'a> {
+impl<'a> RnnlmParams for RnnlmLSTMParams {
     fn params(&self) -> Vec<&Update> {
         vec![
-            &self.embed_w,
+            self.embed_w.t(),
             &self.lstm_wx1,
             &self.lstm_wh1,
             &self.lstm_b1,
@@ -230,23 +231,22 @@ impl<'a> RnnlmParams for RnnlmLSTMParams<'a> {
     }
 }
 
-pub struct RnnlmLSTMParams<'a> {
-    embed_w: P1<Arr2d>,
+pub struct RnnlmLSTMParams {
+    embed_w: P2<Arr2d>,
     lstm_wx1: P1<Arr2d>,
     lstm_wh1: P1<Arr2d>,
     lstm_b1: P1<Arr1d>,
     lstm_wx2: P1<Arr2d>,
     lstm_wh2: P1<Arr2d>,
     lstm_b2: P1<Arr1d>,
-    affine_w: P2<'a, Arr2d>,
     affine_b: P1<Arr1d>,
 }
-impl<'a> RnnlmLSTMParams<'a> {
+impl<'a> RnnlmLSTMParams {
     /// simplparamsでwordvec_sizeというのがあったが、これはhidden_sizeと共通にさせる
     /// これにより、embed_wとaffine_wを共有させる
     pub fn new(vocab_size: usize, hidden_size: usize) -> Self {
         let h = hidden_size;
-        let embed_w = P1::new(randarr2d(vocab_size, h) / 100.0);
+        let embed_w = P2::new(randarr2d(vocab_size, h) / 100.0);
         let mat_init = |m, n| randarr2d(m, n) / (m as f32).sqrt();
         let lstm_wx1 = P1::new(mat_init(h, 4 * h));
         let lstm_wh1 = P1::new(mat_init(h, 4 * h));
@@ -254,7 +254,6 @@ impl<'a> RnnlmLSTMParams<'a> {
         let lstm_wx2 = P1::new(mat_init(h, 4 * h));
         let lstm_wh2 = P1::new(mat_init(h, 4 * h));
         let lstm_b2 = P1::new(Arr1d::zeros((4 * h,)));
-        let affine_w = embed_w.t();
         let affine_b = P1::new(Arr1d::zeros((vocab_size,)));
         Self {
             embed_w,
@@ -264,7 +263,6 @@ impl<'a> RnnlmLSTMParams<'a> {
             lstm_wx2,
             lstm_wh2,
             lstm_b2,
-            affine_w,
             affine_b,
         }
     }
@@ -291,7 +289,7 @@ impl<'a> RnnlmLSTM<'a> {
             &params.lstm_b2,
             time_size,
         );
-        let affine = TimeAffine::new(&params.affine_w, &params.affine_b); // TODO embed_wを転置して、(hidden_size, vocab_size)にしなければならない。
+        let affine = TimeAffine::new(params.embed_w.t(), &params.affine_b); // TODO embed_wを転置して、(hidden_size, vocab_size)にしなければならない。
         Self {
             vocab_size,
             wordvec_size,

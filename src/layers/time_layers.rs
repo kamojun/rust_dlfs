@@ -116,11 +116,11 @@ impl<'a> TimeRNN<'a> {
 }
 
 pub struct TimeEmbedding<'a> {
-    w: &'a P1<Arr2d>,   // <- グローバルパラメータ(更新、学習が必要なもの)
-    idx: Array2<usize>, // <- ローカルパラメータ(直接保持する)
+    w: &'a Param<Arr2d>, // <- グローバルパラメータ(更新、学習が必要なもの)
+    idx: Array2<usize>,  // <- ローカルパラメータ(直接保持する)
 }
 impl<'a> TimeEmbedding<'a> {
-    pub fn new(w: &'a P1<Arr2d>) -> Self {
+    pub fn new(w: &'a Param<Arr2d>) -> Self {
         Self {
             w,
             idx: Default::default(),
