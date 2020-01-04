@@ -1,21 +1,21 @@
 use crate::io::*;
 use crate::model::rnn::*;
 use crate::model::*;
-use crate::optimizer::{AdaGrad, Optimizer, SGD};
+use crate::optimizer::{AdaGrad, NewSGD, Optimizer, SGD};
 use crate::types::*;
 use crate::util::*;
 extern crate ndarray;
 use ndarray::{s, Array, Array1, Array2, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
-pub struct RnnlmTrainer<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> {
+pub struct RnnlmTrainer<'a, R: Rnnlm, P: RnnlmParams> {
     pub model: R,
     params: &'a P,
-    optimizer: O,
+    optimizer: NewSGD<'a>,
     time_idx: usize,
     ppl_list: Vec<f32>,
 }
-impl<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<'a, R, P, O> {
-    pub fn new(model: R, params: &'a P, optimizer: O) -> Self {
+impl<'a, R: Rnnlm, P: RnnlmParams> RnnlmTrainer<'a, R, P> {
+    pub fn new(model: R, params: &'a P, optimizer: NewSGD<'a>) -> Self {
         Self {
             model,
             params,
@@ -61,7 +61,7 @@ impl<'a, R: Rnnlm, P: RnnlmParams, O: Optimizer> RnnlmTrainer<'a, R, P, O> {
             for (iter, (batch_x, batch_t)) in x_batches.zip(t_batches).enumerate() {
                 eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
                 self.model.backward();
-                self.params.update_clipgrads(0.25, 20.0);
+                self.optimizer.update_clip_lr();
                 // self.params.update_clip_lr(0.1, 20.0); // TODO optimizerを設定して外部から切替
                 if (iter + 1) % eval_interval == 0 {
                     let ppl = (eval_loss / eval_interval as f32).exp();

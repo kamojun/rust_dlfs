@@ -209,7 +209,6 @@ impl<'a> SimpleRnnlmLSTM<'a> {
 pub struct RnnlmLSTM<'a> {
     vocab_size: usize,
     wordvec_size: usize,
-    hidden_size: usize,
     embed: TimeEmbedding<'a>,
     dropouts: [Dropout<Ix3>; 3],
     rnn: [TimeLSTM<'a>; 2],
@@ -275,7 +274,6 @@ impl<'a> RnnlmLSTM<'a> {
     pub fn new(
         vocab_size: usize,
         wordvec_size: usize,
-        hidden_size: usize,
         time_size: usize,
         dropout_ratio: f32,
         params: &'a RnnlmLSTMParams,
@@ -297,7 +295,6 @@ impl<'a> RnnlmLSTM<'a> {
         Self {
             vocab_size,
             wordvec_size,
-            hidden_size,
             embed,
             dropouts: [
                 Dropout::new(dropout_ratio),

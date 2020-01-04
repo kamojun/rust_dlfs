@@ -1,7 +1,59 @@
 extern crate ndarray;
 use super::types::{Arr1d, Arr2d};
+use crate::params::Update;
 use itertools::izip;
 use ndarray::{arr1, Array, Array1, Dimension, Ix1};
+
+pub fn update(params: Vec<&Update>, clip: f32, lr: f32) {
+    let norm = params
+        .iter()
+        .map(|x| x.grads_norm_squared())
+        .sum::<f32>()
+        .sqrt();
+    let rate = (clip / (norm + 1e-6)).min(1.0) * lr;
+    update_lr(params, rate);
+}
+
+fn update_lr(params: Vec<&Update>, lr: f32) {
+    for param in params.iter() {
+        param.update_lr(lr);
+    }
+}
+
+pub struct NewSGD<'a> {
+    lr: f32,
+    clip: f32,
+    params: Vec<&'a Update>,
+}
+
+impl<'a> NewSGD<'a> {
+    pub fn new(lr: f32, clip: f32, params: Vec<&'a Update>) -> Self {
+        Self { lr, clip, params }
+    }
+    pub fn update(&self) {
+        self.update_lr(self.lr);
+    }
+    pub fn update_lr(&self, lr: f32) {
+        for param in self.params.iter() {
+            param.update_lr(self.lr);
+        }
+    }
+    pub fn update_clip_lr(&self) {
+        for param in self.params.iter() {
+            param.update_clip_lr(self.clip, self.lr);
+        }
+    }
+    pub fn update_clipgrads(&self) {
+        let norm = self
+            .params
+            .iter()
+            .map(|x| x.grads_norm_squared())
+            .sum::<f32>()
+            .sqrt();
+        let rate = (self.clip / (norm + 1e-6)).min(1.0) * self.lr;
+        self.update_lr(rate);
+    }
+}
 
 pub trait Optimizer {
     // fn update<'a, T: Math<'a>>(&self, mut params: Vec<&mut T>, grad: Vec<&'a T>) {}
