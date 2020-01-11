@@ -250,10 +250,11 @@ impl<'a> LSTM<'a> {
         };
         (h_next, c_next)
     }
+    /// dh: (batch, hidden), dc: (battch, hidden)
     /// 返り値は(dx, dh_prev, dc_prev)
     pub fn backward(&mut self, dh_next: Arr2d, dc_next: Arr2d) -> (Arr2d, Arr2d, Arr2d) {
         let cache = self.cache.clone();
-        let c_next_tanh = cache.c_next.mapv(f32::tanh); // 本来forwardで行った計算だが、cacheしてないので、復活させる
+        let c_next_tanh = cache.c_next.mapv(f32::tanh); // すでにforwardで行った計算だが、cacheしてないので、復活させる
         let ds = dc_next + &dh_next * &cache.o * c_next_tanh.dtanh();
         let dc_prev = &ds * &cache.f;
         // dAを準備

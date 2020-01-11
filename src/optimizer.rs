@@ -21,7 +21,7 @@ fn update_lr(params: Vec<&Update>, lr: f32) {
 }
 
 pub struct NewSGD<'a> {
-    lr: f32,
+    pub lr: f32,
     clip: f32,
     params: Vec<&'a Update>,
 }

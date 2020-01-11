@@ -4,13 +4,15 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io;
 // extern crate ndarray;
+use crate::model::rnn::RnnlmLSTMParams;
+use crate::params::P1;
 use crate::types::Arr2d;
-use ndarray::Array2;
+use ndarray::{Array2, Dimension, Ix2};
 
-pub trait Save<T> {
+pub trait Save {
     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>>;
 }
-impl<T: Clone + Serialize> Save<T> for Array2<T> {
+impl<T: Clone + Serialize> Save for Array2<T> {
     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
         let mut wtr = WriterBuilder::new()
             .has_headers(false)
@@ -24,12 +26,23 @@ impl<T: Clone + Serialize> Save<T> for Array2<T> {
     }
 }
 use crate::model::{Model2, CBOW};
-impl Save<f32> for CBOW {
+impl Save for CBOW {
     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
         let v = self.params_immut();
         v[0].save_as_csv(&format!("{}{}", filename, "/w_in.csv"))?;
         v[1].save_as_csv(&format!("{}{}", filename, "/w_out.csv"))?;
         Ok(())
+    }
+}
+
+// impl<D: Dimension> Save for P1<Array<f32, D>> {
+//     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
+//         self.p().save_as_csv("hello");
+//     }
+// }
+impl Save for RnnlmLSTMParams {
+    fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
+        unimplemented!();
     }
 }
 

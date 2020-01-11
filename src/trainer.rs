@@ -5,64 +5,73 @@ use crate::optimizer::{AdaGrad, NewSGD, Optimizer, SGD};
 use crate::types::*;
 use crate::util::*;
 extern crate ndarray;
+// use ndarray::iter::AxisChunksIter;
 use ndarray::{s, Array, Array1, Array2, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
-pub struct RnnlmTrainer<'a, R: Rnnlm, P: RnnlmParams> {
+pub struct RnnlmTrainer<'a, R: Rnnlm> {
     pub model: R,
-    params: &'a P,
     optimizer: NewSGD<'a>,
-    time_idx: usize,
     ppl_list: Vec<f32>,
 }
-impl<'a, R: Rnnlm, P: RnnlmParams> RnnlmTrainer<'a, R, P> {
-    pub fn new(model: R, params: &'a P, optimizer: NewSGD<'a>) -> Self {
+impl<'a, R: Rnnlm> RnnlmTrainer<'a, R> {
+    pub fn new(model: R, optimizer: NewSGD<'a>) -> Self {
         Self {
             model,
-            params,
             optimizer,
-            time_idx: 0,
             ppl_list: Vec::new(),
         }
-    }
-    pub fn get_batch(&self, x: Arr2d, t: Arr2d, batch_size: usize, time_size: usize) {
-        let data_size = x.shape()[0];
-        let sample_num = data_size / time_size;
     }
     pub fn print_ppl(&self) {
         putsd!(self.ppl_list);
     }
+    fn get_baches(
+        corpus: &'a Vec<usize>,
+        batch_size: usize,
+        time_size: usize,
+        time_position: &mut usize,
+    ) -> (Array2<usize>, Array2<usize>) {
+        let data_size = corpus.len() - 1;
+        let batch_time_offset = data_size / batch_size; // 各列でどれだけずらすか
+        let time_shift = (batch_time_offset / time_size) * time_size; // time_sizeで割り切れるようにする
+        /// ↓各列の先頭
+        let time_offsets: Vec<_> = (0..batch_size)
+            .map(|i| *time_position + i * batch_time_offset)
+            .collect();
+        // 各列で、
+        let position = |i, j| (time_offsets[i] + j) % data_size;
+        let xsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| corpus[position(i, j)]);
+        let tsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| {
+            corpus[position(i, j) + 1]
+        });
+        *time_position += time_shift; // 次の1列目はこの位置に来る
+        (xsa, tsa)
+    }
     pub fn fit(
         &mut self,
-        xs: Vec<usize>,
-        ts: Vec<usize>,
+        corpus: &Vec<usize>,
         max_epoch: usize,
         batch_size: usize,
         time_size: usize,
         eval_interval: Option<usize>,
+        corpus_val: Option<&Vec<usize>>,
     ) {
-        let data_size = xs.len();
+        let data_size = corpus.len() - 1;
         //  (batch_size, time_size)型のデータを学習に用いる
-        let mut eval_loss = 0.0;
-
-        let time_shift = data_size / batch_size;
-        let max_iters = time_shift / time_size;
-        let time_shift = max_iters * time_size;
+        let max_iters = (data_size / batch_size) / time_size;
         let eval_interval = eval_interval.unwrap_or(max_iters);
-
-        let xsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| xs[i * time_shift + j]);
-        let tsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| ts[i * time_shift + j]);
-
+        let mut time_position = 0;
         let start_time = std::time::Instant::now();
-        // 単純に同じデータで学習を繰り返す。
-        // ランダム性はない
+        let mut best_ppl = std::f32::INFINITY;
         for epoch in 1..=max_epoch {
+            let mut eval_loss = 0.0;
+            let (xsa, tsa) = Self::get_baches(corpus, batch_size, time_size, &mut time_position);
             let x_batches = xsa.axis_chunks_iter(Axis(1), time_size);
             let t_batches = tsa.axis_chunks_iter(Axis(1), time_size);
             for (iter, (batch_x, batch_t)) in x_batches.zip(t_batches).enumerate() {
                 eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
                 self.model.backward();
                 self.optimizer.update_clip_lr();
-                // self.params.update_clip_lr(0.1, 20.0); // TODO optimizerを設定して外部から切替
+                // self.optimizer.update();
                 if (iter + 1) % eval_interval == 0 {
                     let ppl = (eval_loss / eval_interval as f32).exp();
                     let elapsed_time = std::time::Instant::now() - start_time;
@@ -79,25 +88,35 @@ impl<'a, R: Rnnlm, P: RnnlmParams> RnnlmTrainer<'a, R, P> {
                     eval_loss = 0.0;
                 }
             }
+            match corpus_val {
+                None => {}
+                Some(_corpus_val) => {
+                    self.model.reset_state(); // train_corpusでの記憶をなくす
+                    let ppl = self.eval(_corpus_val, batch_size, time_size);
+                    self.model.reset_state(); // evalでの記憶をなくす, TODO: 本当はここでtrain中の記憶を復活させるべきな気もする。
+                    if best_ppl > ppl {
+                        best_ppl = ppl;
+                    } else {
+                        self.optimizer.lr /= 4.0;
+                    }
+                }
+            }
         }
     }
-    pub fn eval(&mut self, corpus_test: Vec<usize>, batch_size: usize, time_size: usize) -> f32 {
-        let data_size = corpus_test.len() - 1;
+    pub fn eval(&mut self, corpus_eval: &Vec<usize>, batch_size: usize, time_size: usize) -> f32 {
+        let data_size = corpus_eval.len() - 1;
         //  (batch_size, time_size)型のデータを学習に用いる
         let mut eval_loss = 0.0;
         let max_iters = data_size / (batch_size * time_size);
         let time_shift = max_iters * time_size;
-
-        let xsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| {
-            corpus_test[i * time_shift + j]
-        });
-        let tsa = Array2::from_shape_fn((batch_size, time_shift), |(i, j)| {
-            corpus_test[i * time_shift + j + 1]
-        });
+        let mut time_position = 0;
+        let (xsa, tsa) = Self::get_baches(corpus_eval, batch_size, time_size, &mut time_position);
         let x_batches = xsa.axis_chunks_iter(Axis(1), time_size);
         let t_batches = tsa.axis_chunks_iter(Axis(1), time_size);
         for (iter, (batch_x, batch_t)) in x_batches.zip(t_batches).enumerate() {
-            eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
+            eval_loss += self
+                .model
+                .eval_forward(batch_x.to_owned(), batch_t.to_owned());
             if (iter + 1) % 10 == 0 {
                 println!("|iter {}/{} |", iter + 1, max_iters);
             }

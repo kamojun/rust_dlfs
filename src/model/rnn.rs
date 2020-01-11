@@ -11,6 +11,9 @@ use std::rc::Rc;
 
 pub trait Rnnlm {
     fn forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32;
+    fn eval_forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32 {
+        self.forward(x, t)
+    }
     fn backward(&mut self);
     fn reset_state(&mut self) {
         unimplemented!();
@@ -331,5 +334,22 @@ impl<'a> Rnnlm for RnnlmLSTM<'a> {
             dout3d = self.dropouts[i].backward(dout3d);
         }
         self.embed.backward(dout3d);
+    }
+    fn eval_forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32 {
+        let mut x = self.embed.forward(x);
+        for i in 0..2 {
+            // x = self.dropouts[i].train_forward(x);
+            x = self.rnn[i].forward(x);
+        }
+        let x = remove_axis(x);
+        let x = self.affine.forward(x);
+        let batch_time_size = t.len();
+        let t = t.into_shape((batch_time_size,)).unwrap();
+        self.loss_layer.forward2(x, t)
+    }
+    fn reset_state(&mut self) {
+        for _r in self.rnn.iter_mut() {
+            _r.reset_state();
+        }
     }
 }

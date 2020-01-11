@@ -2,7 +2,7 @@ use crate::io::*;
 use crate::layers::loss_layer::*;
 use crate::layers::*;
 use crate::model::rnn::*;
-use crate::optimizer::{AdaGrad, Optimizer, SGD};
+use crate::optimizer::{AdaGrad, NewSGD, Optimizer, SGD};
 use crate::trainer::RnnlmTrainer;
 use crate::trainer::Trainer;
 use crate::util::*;
@@ -34,9 +34,10 @@ pub fn train() {
 
     let params = SimpleRnnlmParams::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
     let model = SimpleRnnlm::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE, TIME_SIZE, &params);
-    let optimizer = AdaGrad::new(LR);
-    let mut trainer = RnnlmTrainer::new(model, &params, optimizer);
-    trainer.fit(xs, ts, MAX_EPOCH, BATCH_SIZE, TIME_SIZE, None);
+    let optimizer = NewSGD::new(LR, 0.0, params.params());
+
+    let mut trainer = RnnlmTrainer::new(model, optimizer);
+    trainer.fit(&corpus, MAX_EPOCH, BATCH_SIZE, TIME_SIZE, None);
     trainer.print_ppl();
 }
 

@@ -3,3 +3,5 @@
 Cargo.lock
 **/*.csv
 /trained
+
+memo.txt

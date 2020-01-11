@@ -28,3 +28,25 @@ SimpleCBOWモデル作成に取り掛かる。
             .expect("contexts array must be dim3");
 という感じで次元チェックしてキャストすることができるので、個別メソッドはかけそうだが、
 初めの方の、2次元、3次元共通の操作をどう書くかが問題。
+
+|epoch 1| iter 20/1327 | time 5[s] | perplexity 4582.5454
+|epoch 1| iter 40/1327 | time 9[s] | perplexity 1373.6024
+|epoch 1| iter 60/1327 | time 14[s] | perplexity 1045.5115
+|epoch 1| iter 80/1327 | time 19[s] | perplexity 854.92584
+|epoch 1| iter 100/1327 | time 24[s] | perplexity 781.17633
+|epoch 1| iter 120/1327 | time 29[s] | perplexity 669.42664
+|epoch 1| iter 140/1327 | time 34[s] | perplexity 638.25586
+|epoch 1| iter 160/1327 | time 39[s] | perplexity 661.27277
+|epoch 1| iter 180/1327 | time 44[s] | perplexity 635.8561
+|epoch 1| iter 200/1327 | time 49[s] | perplexity 615.3159
+|epoch 1| iter 220/1327 | time 53[s] | perplexity 556.78613
+|epoch 1| iter 240/1327 | time 58[s] | perplexity 557.4976
+test train::ch06::ch06_test ... test train::ch06::ch06_test has been running for over 60 seconds
+|epoch 1| iter 260/1327 | time 63[s] | perplexity 495.92358
+|epoch 1| iter 280/1327 | time 68[s] | perplexity 537.25525
+|epoch 1| iter 300/1327 | time 73[s] | perplexity 528.15466
+|epoch 1| iter 320/1327 | time 78[s] | perplexity 440.4421
+|epoch 1| iter 340/1327 | time 82[s] | perplexity 432.0781
+|epoch 1| iter 360/1327 | time 87[s] | perplexity 528.1471
+|epoch 1| iter 380/1327 | time 93[s] | perplexity 430.4847
+^C
