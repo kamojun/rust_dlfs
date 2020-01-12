@@ -1,3 +1,4 @@
+use crate::io::{Load, Save};
 use crate::layers::loss_layer::*;
 use crate::layers::time_layers::*;
 use crate::layers::Dropout;
@@ -350,6 +351,54 @@ impl<'a> Rnnlm for RnnlmLSTM<'a> {
     fn reset_state(&mut self) {
         for _r in self.rnn.iter_mut() {
             _r.reset_state();
+        }
+    }
+}
+
+pub trait SavableParams {
+    fn param_names() -> (Vec<&'static str>, Vec<&'static str>) {
+        (
+            vec!["embed_w", "lstm_wx1", "lstm_wx2", "lstm_wx2", "lstm_wh2"],
+            vec!["lstm_b1", "lstm_b2", "affine_b"],
+        )
+    }
+    fn params_to_save(&self) -> Vec<(&Save, &str)>;
+    fn load_new(params1: Vec<P1<Arr1d>>, params2: Vec<P1<Arr2d>>) -> Self;
+}
+impl SavableParams for RnnlmLSTMParams {
+    fn param_names() -> (Vec<&'static str>, Vec<&'static str>) {
+        (
+            vec!["embed_w", "lstm_wx1", "lstm_wx2", "lstm_wx2", "lstm_wh2"],
+            vec!["lstm_b1", "lstm_b2", "affine_b"],
+        )
+    }
+    fn params_to_save(&self) -> Vec<(&Save, &str)> {
+        vec![
+            (self.affine_w.t(), "embed_w"),
+            (&self.lstm_wx1, "lstm_wx1"),
+            (&self.lstm_wh1, "lstm_wx2"),
+            (&self.lstm_b1, "lstm_b1"),
+            (&self.lstm_wx2, "lstm_wx2"),
+            (&self.lstm_wh2, "lstm_wh2"),
+            (&self.lstm_b2, "lstm_b2"),
+            (&self.affine_b, "affine_b"),
+        ]
+    }
+    fn load_new(params1: Vec<P1<Arr1d>>, params2: Vec<P1<Arr2d>>) -> Self {
+        // next.unwrap多すぎ
+        let mut params1 = params1.into_iter();
+        let mut params2 = params2.into_iter();
+        let embed_w = params2.next().unwrap();
+        Self {
+            // embed_w,
+            lstm_wx1: params2.next().unwrap(),
+            lstm_wh1: params2.next().unwrap(),
+            lstm_b1: params1.next().unwrap(),
+            lstm_wx2: params2.next().unwrap(),
+            lstm_wh2: params2.next().unwrap(),
+            lstm_b2: params1.next().unwrap(),
+            affine_w: embed_w.t(),
+            affine_b: params1.next().unwrap(),
         }
     }
 }

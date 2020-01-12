@@ -4,27 +4,28 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io;
 // extern crate ndarray;
-use crate::model::rnn::RnnlmLSTMParams;
-use crate::params::P1;
-use crate::types::Arr2d;
-use ndarray::{Array2, Dimension, Ix2};
+use crate::model::rnn::{RnnlmLSTMParams, SavableParams};
+use crate::params::{Param, P1};
+use crate::types::{Arr1d, Arr2d};
+use ndarray::{Array, Array1, Array2, Axis, Dimension, Ix1, Ix2, RemoveAxis};
 
 pub trait Save {
     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>>;
 }
-impl<T: Clone + Serialize> Save for Array2<T> {
+impl<T: Clone + Serialize, D: RemoveAxis> Save for Array<T, D> {
     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
         let mut wtr = WriterBuilder::new()
             .has_headers(false)
             .from_path(filename)?;
-        // wtr.serialize()?;
-        for row in self.outer_iter() {
+        let n = self.shape().len();
+        for row in self.lanes(Axis(n - 1)) {
             wtr.serialize(row.iter().cloned().collect::<Vec<T>>())?
         }
         wtr.flush()?;
         Ok(())
     }
 }
+
 use crate::model::{Model2, CBOW};
 impl Save for CBOW {
     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
@@ -35,14 +36,17 @@ impl Save for CBOW {
     }
 }
 
-// impl<D: Dimension> Save for P1<Array<f32, D>> {
-//     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
-//         self.p().save_as_csv("hello");
-//     }
-// }
-impl Save for RnnlmLSTMParams {
+impl<T: Save + Default> Save for P1<T> {
     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
-        unimplemented!();
+        self.p().save_as_csv(filename)
+    }
+}
+impl<SP: SavableParams> Save for SP {
+    fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
+        for (p, name) in self.params_to_save() {
+            p.save_as_csv(&format!("{}/{}", filename, name))?
+        }
+        Ok(())
     }
 }
 
@@ -58,18 +62,56 @@ fn save_example(arr: Arr2d) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn csv_to_arrayf(filename: &str) -> Result<Arr2d, Box<dyn Error>> {
-    let mut rdr = ReaderBuilder::new()
-        .has_headers(false)
-        .from_path(filename)?;
-    let mut v = Vec::new();
-    for result in rdr.deserialize() {
-        let record: Vec<f32> = result?;
-        v.push(record);
+pub trait Load {
+    fn load_from_csv(filename: &str) -> Result<Self, Box<dyn Error>>
+    where
+        Self: std::marker::Sized;
+}
+/// Array<T, D>で実装したいところだが...
+impl<T: Copy> Load for Array2<T>
+where
+    for<'de> T: Deserialize<'de>,
+{
+    fn load_from_csv(filename: &str) -> Result<Self, Box<dyn Error>> {
+        csv_to_array(filename)
     }
-    Ok(Array::from_shape_fn((v.len(), v[0].len()), |(i, j)| {
-        v[i][j]
-    }))
+}
+impl<T: Copy> Load for Array1<T>
+where
+    for<'de> T: Deserialize<'de>,
+{
+    fn load_from_csv(filename: &str) -> Result<Self, Box<dyn Error>> {
+        csv_to_array(filename).map(|res| res.outer_iter().next().unwrap().to_owned())
+    }
+}
+impl<T: Load + Default> Load for P1<T> {
+    fn load_from_csv(filename: &str) -> Result<Self, Box<dyn Error>> {
+        T::load_from_csv(filename).map(P1::new) // まさにgeneric
+    }
+}
+impl<SP: SavableParams> Load for SP {
+    fn load_from_csv(filename: &str) -> Result<Self, Box<dyn Error>> {
+        let (name1, name2) = SP::param_names();
+        // generic なclosure作れず
+        // let load_files = |names: Vec<&str>| {
+        //     names
+        //         .into_iter()
+        //         .map(|name| P1::load_from_csv(&format!("{}/{}", filename, name)))
+        //         .collect::<Result<Vec<_>, _>>()
+        // };
+        // let params1 = load_files(name1)?;
+        // let params2 = load_files(name2)?;
+        // ↓全く同じ3行を書かなければならないのだろうか...
+        let params1 = name1
+            .into_iter()
+            .map(|name| P1::load_from_csv(&format!("{}/{}", filename, name)))
+            .collect::<Result<Vec<_>, _>>()?;
+        let params2 = name2
+            .into_iter()
+            .map(|name| P1::load_from_csv(&format!("{}/{}", filename, name)))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(SP::load_new(params1, params2))
+    }
 }
 
 pub fn csv_to_array<T: Copy>(filename: &str) -> Result<Array2<T>, Box<dyn Error>>
@@ -112,8 +154,6 @@ where
     Ok(v)
 }
 
-extern crate ndarray;
-use ndarray::Array;
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,5 +166,7 @@ mod tests {
         // let c = read_csv::<(usize, String)>("./data/ptb/id.csv").expect("error!!!");
         arr.save_as_csv("hoge.csv");
         // putsl!(c);
+        use ndarray::Array1;
+        Array1::<f32>::zeros((10,)).save_as_csv("zerozero.csv");
     }
 }
