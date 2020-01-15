@@ -133,7 +133,7 @@ where
         "{} secs to lead ({}, {})",
         now.elapsed().as_secs(),
         v.len(),
-        v[0].len()
+        v[0].len(),
     );
     Ok(Array::from_shape_fn((v.len(), v[0].len()), |(i, j)| {
         v[i][j]
@@ -146,6 +146,7 @@ where
 {
     let mut rdr = ReaderBuilder::new()
         .has_headers(false)
+        .quoting(false)
         .from_path(filename)?;
     let mut v = Vec::new();
     for result in rdr.deserialize() {
@@ -161,6 +162,7 @@ where
 {
     let mut rdr = ReaderBuilder::new()
         .has_headers(false)
+        .quoting(false)
         .from_path(filename)?;
     let mut v = Vec::new();
     for result in rdr.deserialize().take(n) {
@@ -185,8 +187,10 @@ mod tests {
         // use ndarray::Array1;
         // Array1::<f32>::zeros((10,)).save_as_csv("zerozero.csv");
 
-        csv_to_array::<f32>(
+        let arr = csv_to_array::<f32>(
             "/Users/kamohara_jun/Documents/projects/dlfs/rust/data/BetterRnnlm/affine_w.csv",
-        );
+        )
+        .unwrap();
+        putsd!(arr[[0, 0]])
     }
 }

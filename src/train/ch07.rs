@@ -1,6 +1,7 @@
 use crate::io::*;
 use crate::model::rnn::*;
 use crate::util::replace_item;
+use ndarray::array;
 use std::collections::HashMap;
 
 fn gen_text() {
@@ -24,15 +25,28 @@ fn gen_text() {
         .into_iter()
         .map(|s| word_to_id[&s.to_string()])
         .collect();
-    let start_id = word_to_id[&String::from("you")];
-    let ids = model.generate(start_id, skip_ids, SAMPLE_SIZE);
-    let mut txt: Vec<_> = ids.into_iter().map(|i| id_to_word[&i].clone()).collect();
+    let mut text_id: Vec<_> = "the meaning of life is"
+        .split(' ')
+        .into_iter()
+        .map(|s| word_to_id[&s.to_string()])
+        .collect();
+    let start_gen_from = text_id.pop().unwrap();
+    for i in &text_id {
+        model.predict(array![[*i]]);
+    }
+    let mut ids = model.generate(start_gen_from, skip_ids, SAMPLE_SIZE);
+    text_id.append(&mut ids);
+    let mut txt: Vec<_> = text_id
+        .into_iter()
+        .map(|i| id_to_word[&i].clone())
+        .collect();
     let txt = replace_item(txt, String::from("<eos>"), String::from("\n")).join(" ");
     println!("{}", txt);
 }
 
+fn learn_addtion() {}
+
 #[test]
 pub fn ch07_test() {
-    // gen_text();
-    println!("{}", "a\nb")
+    gen_text();
 }
