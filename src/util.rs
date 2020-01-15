@@ -325,3 +325,11 @@ pub fn replace_item<T: Eq + Clone>(mut v: Vec<T>, prev: T, new: T) -> Vec<T> {
     }
     v
 }
+
+/// 先頭の軸を落とす
+pub fn remove_axis<T, D: RemoveAxis>(a: Array<T, D>) -> Array<T, D::Smaller> {
+    let mut d = a.shape().to_vec();
+    let f = d.remove(1);
+    d[0] *= f;
+    a.into_shape(d).unwrap().into_dimensionality().unwrap()
+}

@@ -6,7 +6,7 @@ use crate::math::Norm;
 use crate::optimizer::*;
 use crate::params::*;
 use crate::types::*;
-use crate::util::randarr2d;
+use crate::util::{randarr2d, remove_axis};
 use ndarray::{Array, Array2, Axis, Ix2, Ix3, RemoveAxis};
 use std::rc::Rc;
 
@@ -57,12 +57,12 @@ impl RnnlmParams for SimpleRnnlmParams {
 }
 
 pub struct SimpleRnnlmParams {
-    embed_w: P1<Arr2d>,
-    rnn_wx: P1<Arr2d>,
-    rnn_wh: P1<Arr2d>,
-    rnn_b: P1<Arr1d>,
-    affine_w: P1<Arr2d>,
-    affine_b: P1<Arr1d>,
+    pub embed_w: P1<Arr2d>,
+    pub rnn_wx: P1<Arr2d>,
+    pub rnn_wh: P1<Arr2d>,
+    pub rnn_b: P1<Arr1d>,
+    pub affine_w: P1<Arr2d>,
+    pub affine_b: P1<Arr1d>,
 }
 impl SimpleRnnlmParams {
     pub fn new(vocab_size: usize, wordvec_size: usize, hidden_size: usize) -> Self {
@@ -99,6 +99,9 @@ impl SimpleRnnlmParams {
             affine_b,
         }
     }
+    pub fn new_for_Decoder(vocab_size: usize, wordvec_size: usize, hidden_size: usize) -> Self {
+        Self::new_for_LSTM(vocab_size, wordvec_size, hidden_size)
+    }
 }
 pub struct SimpleRnnlm<'a> {
     vocab_size: usize,
@@ -110,13 +113,6 @@ pub struct SimpleRnnlm<'a> {
     loss_layer: SoftMaxWithLoss,
 }
 
-/// 先頭の軸を落とす
-fn remove_axis<T, D: RemoveAxis>(a: Array<T, D>) -> Array<T, D::Smaller> {
-    let mut d = a.shape().to_vec();
-    let f = d.remove(1);
-    d[0] *= f;
-    a.into_shape(d).unwrap().into_dimensionality().unwrap()
-}
 impl<'a> Rnnlm for SimpleRnnlm<'a> {
     fn forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32 {
         let x = self.embed.forward(x);

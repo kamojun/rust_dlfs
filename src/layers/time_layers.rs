@@ -329,6 +329,22 @@ impl<'a> TimeLSTM<'a> {
         }
         hs
     }
+    pub fn forward_piece(&mut self, xs: Arr2d) -> Arr2d {
+        // time_size = 1で進める
+        // 事前にself.h.0をセットしておく(self.set_state)
+        let batch_size = xs.dim().0;
+        // let mut hs = Arr2d::zeros((batch_size, self.hidden_size));
+        assert_eq!(
+            batch_size,
+            self.h.0.dim().0,
+            "you have to set the right state h"
+        );
+        let (_h, _c) = self.layers[0].forward(xs, self.h.0.clone(), self.c.0.clone());
+        // hs.assign(&_h);
+        self.h.0 = _h;
+        self.c.0 = _c;
+        self.h.0.clone()
+    }
     pub fn backward(&mut self, dhs: Arr3d) -> Arr3d {
         let batch_size = dhs.len() / (self.time_size * self.hidden_size);
         let mut dxs = Arr3d::zeros((batch_size, self.time_size, self.channel_size));
@@ -359,5 +375,11 @@ impl<'a> TimeLSTM<'a> {
     pub fn reset_state(&mut self) {
         self.h = Default::default();
         self.c = Default::default();
+    }
+    pub fn set_state(&mut self, h: Arr2d) {
+        // 今更ながら、h.1, c.1 (dh, chのつもりっていつ使うんだ?)
+        self.h.0 = h;
+        self.h.1 = Default::default();
+        self.c = (Array::zeros(self.h.0.dim()), Default::default());
     }
 }

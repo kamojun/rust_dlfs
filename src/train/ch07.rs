@@ -1,7 +1,8 @@
 use crate::io::*;
 use crate::model::rnn::*;
+use crate::model::seq2seq::*;
 use crate::util::replace_item;
-use ndarray::array;
+use ndarray::{array, Array2};
 use std::collections::HashMap;
 
 fn gen_text() {
@@ -44,7 +45,27 @@ fn gen_text() {
     println!("{}", txt);
 }
 
-fn learn_addtion() {}
+type Seq = Array2<usize>;
+/// 16+75  _91  
+/// 52+607 _659
+/// 75+22  _97
+/// という形式の問題ファイルを受け取り、
+/// 問題, 答え, 記号一覧を返す
+fn load_additon_text(filename: &str) -> (Seq, Seq, Vec<char>) {
+    unimplemented!();
+}
+
+fn train_seq2seq() {
+    let (x, t, chars) = load_additon_text("filename");
+    let vocab_size = chars.len();
+    let wordvec_size = 16;
+    let hideen_size = 128;
+    let batch_size = 128;
+    let encoder_params = EncoderParams::new(vocab_size, wordvec_size, hideen_size);
+    let decoder_params = SimpleRnnlmParams::new_for_Decoder(vocab_size, wordvec_size, hideen_size);
+    // TimeSize = ??
+    // let Seq2Seq::new()
+}
 
 #[test]
 pub fn ch07_test() {
