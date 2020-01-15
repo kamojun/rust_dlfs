@@ -57,7 +57,7 @@ pub fn train2() {
     const BATCH_SIZE: usize = 20;
     const TIME_SIZE: usize = 35;
     const LR: f32 = 20.0;
-    const MAX_EPOCH: usize = 4;
+    const MAX_EPOCH: usize = 1;
     const MAX_GRAD: f32 = 0.25;
     const DROPOUT: f32 = 0.5;
 
@@ -73,7 +73,7 @@ pub fn train2() {
     putsd!(vocab_size, corpus.len());
 
     let params = RnnlmLSTMParams::new(vocab_size, WORDVEC_SIZE);
-    let model = RnnlmLSTM::new(vocab_size, WORDVEC_SIZE, TIME_SIZE, DROPOUT, &params);
+    let model = RnnlmLSTM::new(TIME_SIZE, DROPOUT, &params);
     let optimizer = NewSGD::new(LR, MAX_GRAD, params.params());
 
     let mut trainer = RnnlmTrainer::new(model, optimizer);
@@ -90,10 +90,11 @@ pub fn train2() {
     trainer.model.reset_state();
     let test_ppl = trainer.eval(&corpus_val, BATCH_SIZE, TIME_SIZE);
     putsd!(test_ppl);
-    params.save_as_csv("filename");
+    params.save_as_csv("./trained/rnnlm");
 }
 
 #[test]
 fn ch06_test() {
     train2();
+    let params = RnnlmLSTMParams::load_from_csv("./trained/rnnlm");
 }

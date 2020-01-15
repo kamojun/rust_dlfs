@@ -279,9 +279,9 @@ impl<'a> LSTM<'a> {
 }
 
 pub struct TimeLSTM<'a> {
-    h: (Arr2d, Arr2d),
-    c: (Arr2d, Arr2d),
-    stateful: bool,
+    h: Arr2d,       // 順伝播の時は、前回のhを用いる
+    c: Arr2d,       // 同様にcも用いる
+    stateful: bool, // 前回のhを保持するかどうか
     time_size: usize,
     channel_size: usize,
     hidden_size: usize,
@@ -313,37 +313,39 @@ impl<'a> TimeLSTM<'a> {
     pub fn forward(&mut self, xs: Arr3d) -> Arr3d {
         let batch_size = xs.dim().0;
         let mut hs = Arr3d::zeros((batch_size, self.time_size, self.hidden_size));
-        if !self.stateful || self.h.0.len() == 0 {
-            self.h.0 = Arr2d::zeros((batch_size, self.hidden_size));
-            self.c.0 = self.h.0.clone();
+        // 前回のhを保持しない設定、またはそもそも持っていな時
+        // h, c共に初期化する
+        if !self.stateful || self.h.len() == 0 {
+            self.h = Arr2d::zeros((batch_size, self.hidden_size));
+            self.c = self.h.clone();
         }
         for (layer, xst, mut hst) in izip!(
             self.layers.iter_mut(),
             xs.axis_iter(Axis(1)),
             hs.axis_iter_mut(Axis(1))
         ) {
-            let (_h, _c) = layer.forward(xst.to_owned(), self.h.0.clone(), self.c.0.clone());
+            let (_h, _c) = layer.forward(xst.to_owned(), self.h.clone(), self.c.clone());
             hst.assign(&_h);
-            self.h.0 = _h;
-            self.c.0 = _c;
+            self.h = _h;
+            self.c = _c;
         }
         hs
     }
     pub fn forward_piece(&mut self, xs: Arr2d) -> Arr2d {
         // time_size = 1で進める
-        // 事前にself.h.0をセットしておく(self.set_state)
+        // 事前にself.hをセットしておく(self.set_state)
         let batch_size = xs.dim().0;
         // let mut hs = Arr2d::zeros((batch_size, self.hidden_size));
         assert_eq!(
             batch_size,
-            self.h.0.dim().0,
+            self.h.dim().0,
             "you have to set the right state h"
         );
-        let (_h, _c) = self.layers[0].forward(xs, self.h.0.clone(), self.c.0.clone());
+        let (_h, _c) = self.layers[0].forward(xs, self.h.clone(), self.c.clone());
         // hs.assign(&_h);
-        self.h.0 = _h;
-        self.c.0 = _c;
-        self.h.0.clone()
+        self.h = _h;
+        self.c = _c;
+        self.h.clone()
     }
     pub fn backward(&mut self, dhs: Arr3d) -> Arr3d {
         let batch_size = dhs.len() / (self.time_size * self.hidden_size);
@@ -377,9 +379,7 @@ impl<'a> TimeLSTM<'a> {
         self.c = Default::default();
     }
     pub fn set_state(&mut self, h: Arr2d) {
-        // 今更ながら、h.1, c.1 (dh, chのつもりっていつ使うんだ?)
-        self.h.0 = h;
-        self.h.1 = Default::default();
-        self.c = (Array::zeros(self.h.0.dim()), Default::default());
+        self.h = h;
+        self.c = Array2::zeros(self.h.dim());
     }
 }

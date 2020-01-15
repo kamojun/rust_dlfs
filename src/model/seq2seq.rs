@@ -1,6 +1,7 @@
+use crate::io::*;
 use crate::layers::loss_layer::*;
 use crate::layers::time_layers::*;
-use crate::model::rnn::SimpleRnnlmParams;
+use crate::model::rnn::{Rnnlm, RnnlmParams, SavableParams, SimpleRnnlmParams};
 use crate::params::*;
 use crate::types::*;
 use crate::util::{randarr, remove_axis};
@@ -24,6 +25,39 @@ impl EncoderParams {
             rnn_wx,
             rnn_wh,
             rnn_b,
+        }
+    }
+}
+impl RnnlmParams for EncoderParams {
+    fn params(&self) -> Vec<&Update> {
+        vec![&self.embed_w, &self.rnn_wx, &self.rnn_wh, &self.rnn_b]
+    }
+}
+impl SavableParams for EncoderParams {
+    fn param_names() -> (Vec<&'static str>, Vec<&'static str>) {
+        (
+            vec!["rnn_b", "affine_b"],
+            vec!["embed_w", "rnn_wx", "rnn_wh", "affine_w"],
+        )
+    }
+    fn params_to_save(&self) -> Vec<(&Save, &str)> {
+        // ここら辺のコードの重複なくしたいな...
+        vec![
+            (&self.embed_w, "embed_w"),
+            (&self.rnn_wx, "rnn_wx"),
+            (&self.rnn_wh, "rnn_wh"),
+            (&self.rnn_b, "rnn_b"),
+        ]
+    }
+    fn load_new(params1: Vec<P1<Arr1d>>, params2: Vec<P1<Arr2d>>) -> Self {
+        // next.unwrap多すぎ
+        let mut params1 = params1.into_iter();
+        let mut params2 = params2.into_iter();
+        Self {
+            embed_w: params2.next().unwrap(),
+            rnn_wx: params2.next().unwrap(),
+            rnn_wh: params2.next().unwrap(),
+            rnn_b: params1.next().unwrap(),
         }
     }
 }
@@ -117,31 +151,44 @@ pub struct Seq2Seq<'a> {
 
 impl<'a> Seq2Seq<'a> {
     pub fn new(
-        time_size: usize,
+        encoder_time_size: usize,
+        decoder_time_size: usize,
         encoder_params: &'a EncoderParams,
         decoder_params: &'a SimpleRnnlmParams,
     ) -> Self {
         Self {
-            encoder: Encoder::new(time_size, encoder_params),
-            decoder: Decoder::new(time_size, decoder_params),
+            encoder: Encoder::new(encoder_time_size, encoder_params),
+            decoder: Decoder::new(decoder_time_size, decoder_params),
             loss_layer: Default::default(),
         }
     }
-    fn forawrd(&mut self, idx: Array2<usize>, ts: Array2<usize>) {
-        let decoder_data_length = (ts.dim().1 - 1) as i32;
-        let decoder_idx = ts.slice(s![.., ..decoder_data_length]).to_owned();
-        let decoder_ts = remove_axis(ts.slice(s![.., -decoder_data_length..]).to_owned());
+    fn generate(&mut self, idx: Array2<usize>, start_id: usize, sample_size: usize) -> Vec<usize> {
         let h = self.encoder.forward(idx);
-        let score = self.decoder.forawrd(decoder_idx, h);
-        self.loss_layer.forward2(score, decoder_ts);
+        self.decoder.generate(h, start_id, sample_size)
+    }
+}
+
+impl Rnnlm for Seq2Seq<'_> {
+    /// xはencoderへ入力する
+    /// tはdecoderにとってのコーパスである
+    fn forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32 {
+        let decoder_data_length = (t.dim().1 - 1) as i32;
+        let decoder_x = t.slice(s![.., ..decoder_data_length]).to_owned();
+        let decoder_t = remove_axis(t.slice(s![.., -decoder_data_length..]).to_owned());
+        let h = self.encoder.forward(x);
+        let score = self.decoder.forawrd(decoder_x, h);
+        self.loss_layer.forward2(score, decoder_t)
+    }
+    fn eval_forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32 {
+        self.forward(x, t)
     }
     fn backward(&mut self) {
         let dout = self.loss_layer.backward();
         let dh = self.decoder.backward(dout);
         let dout = self.encoder.backward(dh);
     }
-    fn generate(&mut self, idx: Array2<usize>, start_id: usize, sample_size: usize) -> Vec<usize> {
-        let h = self.encoder.forward(idx);
-        self.decoder.generate(h, start_id, sample_size)
+    fn reset_state(&mut self) {
+        self.decoder.lstm.reset_state();
+        self.encoder.lstm.reset_state();
     }
 }

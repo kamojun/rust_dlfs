@@ -45,7 +45,7 @@ impl<T: Save + Default> Save for P1<T> {
 impl<SP: SavableParams> Save for SP {
     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>> {
         for (p, name) in self.params_to_save() {
-            p.save_as_csv(&format!("{}/{}", filename, name))?
+            p.save_as_csv(&format!("{}/{}.csv", filename, name))?
         }
         Ok(())
     }
@@ -155,6 +155,17 @@ where
     }
     Ok(v)
 }
+use std::fs::File;
+use std::io::prelude::*;
+use std::io::BufReader;
+pub fn read_txt(filename: &str) -> Result<Vec<Vec<char>>, Box<dyn Error>> {
+    for line in BufReader::new(File::open(filename)?).lines() {}
+    let v = BufReader::new(File::open(filename)?)
+        .lines()
+        .map(|l| l.map(|l| l.chars().collect::<Vec<_>>()))
+        .collect::<Result<_, _>>()?;
+    Ok(v)
+}
 
 pub fn read_csv_small<T>(filename: &str, n: usize) -> Result<Vec<T>, Box<dyn Error>>
 where
@@ -191,6 +202,6 @@ mod tests {
             "/Users/kamohara_jun/Documents/projects/dlfs/rust/data/BetterRnnlm/affine_w.csv",
         )
         .unwrap();
-        putsd!(arr[[0, 0]])
+        putsd!(arr[[0, 0]]);
     }
 }

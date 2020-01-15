@@ -4,7 +4,8 @@ use crate::model::*;
 use crate::optimizer::{AdaGrad, NewSGD, Optimizer, SGD};
 use crate::types::*;
 use crate::util::*;
-extern crate ndarray;
+use itertools::izip;
+// extern crate ndarray;
 // use ndarray::iter::AxisChunksIter;
 use ndarray::{s, Array, Array1, Array2, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
@@ -12,6 +13,7 @@ pub struct RnnlmTrainer<'a, R: Rnnlm> {
     pub model: R,
     optimizer: NewSGD<'a>,
     ppl_list: Vec<f32>,
+    max_iters: usize,
 }
 impl<'a, R: Rnnlm> RnnlmTrainer<'a, R> {
     pub fn new(model: R, optimizer: NewSGD<'a>) -> Self {
@@ -19,10 +21,29 @@ impl<'a, R: Rnnlm> RnnlmTrainer<'a, R> {
             model,
             optimizer,
             ppl_list: Vec::new(),
+            max_iters: 0,
         }
     }
     pub fn print_ppl(&self) {
         putsd!(self.ppl_list);
+    }
+    fn print_progress(
+        &mut self,
+        epoch: usize,
+        iter: usize,
+        start_time: std::time::Instant,
+        ppl: f32,
+    ) {
+        let elapsed_time = std::time::Instant::now() - start_time;
+        println!(
+            "|epoch {}| iter {}/{} | time {}[s] | perplexity {}",
+            epoch,
+            iter + 1,
+            self.max_iters,
+            elapsed_time.as_secs(),
+            ppl
+        );
+        self.ppl_list.push(ppl);
     }
     fn get_baches(
         corpus: &'a Vec<usize>,
@@ -46,6 +67,37 @@ impl<'a, R: Rnnlm> RnnlmTrainer<'a, R> {
         *time_position += time_shift; // 次の1列目はこの位置に来る
         (xsa, tsa)
     }
+    pub fn fit_seq2seq(
+        &mut self,
+        x_train: Array2<usize>,
+        t_train: Array2<usize>,
+        max_epoch: usize,
+        batch_size: usize,
+        eval_interval: Option<usize>,
+        corpus_val: Option<&Vec<usize>>,
+    ) {
+        self.max_iters = x_train.dim().0 / batch_size;
+        let start_time = std::time::Instant::now();
+        let eval_interval = eval_interval.unwrap_or(self.max_iters);
+        for epoch in 1..=max_epoch {
+            let mut eval_loss = 0.0;
+            for (iter, (batch_x, batch_t)) in (izip![
+                x_train.axis_chunks_iter(Axis(0), batch_size),
+                t_train.axis_chunks_iter(Axis(0), batch_size)
+            ])
+            .enumerate()
+            {
+                eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
+                self.model.backward();
+                self.optimizer.update_clip_lr();
+                if (iter + 1) % eval_interval == 0 {
+                    let ppl = (eval_loss / eval_interval as f32).exp();
+                    self.print_progress(epoch, iter, start_time, ppl);
+                    eval_loss = 0.0;
+                }
+            }
+        }
+    }
     pub fn fit(
         &mut self,
         corpus: &Vec<usize>,
@@ -57,8 +109,8 @@ impl<'a, R: Rnnlm> RnnlmTrainer<'a, R> {
     ) {
         let data_size = corpus.len() - 1;
         //  (batch_size, time_size)型のデータを学習に用いる
-        let max_iters = (data_size / batch_size) / time_size;
-        let eval_interval = eval_interval.unwrap_or(max_iters);
+        self.max_iters = (data_size / batch_size) / time_size;
+        let eval_interval = eval_interval.unwrap_or(self.max_iters);
         let mut time_position = 0;
         let start_time = std::time::Instant::now();
         let mut best_ppl = std::f32::INFINITY;
@@ -74,17 +126,7 @@ impl<'a, R: Rnnlm> RnnlmTrainer<'a, R> {
                 // self.optimizer.update();
                 if (iter + 1) % eval_interval == 0 {
                     let ppl = (eval_loss / eval_interval as f32).exp();
-                    let elapsed_time = std::time::Instant::now() - start_time;
-                    println!(
-                        "|epoch {}| iter {}/{} | time {}[s] | perplexity {}",
-                        epoch,
-                        iter + 1,
-                        max_iters,
-                        elapsed_time.as_secs(),
-                        ppl
-                    );
-                    self.ppl_list.push(ppl);
-                    // lossについてはeval_intervalごとの評価を行う。
+                    self.print_progress(epoch, iter, start_time, ppl);
                     eval_loss = 0.0;
                 }
             }

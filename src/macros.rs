@@ -12,7 +12,7 @@ macro_rules! putsd {
         $(
             print!("{}= {:?}; ", stringify!($x), $x);
         )*
-
+        println!("  ");
     };
 }
 

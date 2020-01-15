@@ -377,7 +377,7 @@ pub trait SavableParams {
 impl SavableParams for RnnlmLSTMParams {
     fn param_names() -> (Vec<&'static str>, Vec<&'static str>) {
         (
-            vec!["lstm1_b", "lstm2_b", "affine_b"],
+            vec!["rnn_b", "lstm2_b", "affine_b"],
             vec!["embed_w", "lstm1_wx", "lstm1_wh", "lstm2_wx", "lstm2_wh"],
         )
     }
@@ -407,6 +407,37 @@ impl SavableParams for RnnlmLSTMParams {
             lstm_wh2: params2.next().unwrap(),
             lstm_b2: params1.next().unwrap(),
             affine_w: embed_w.t(),
+            affine_b: params1.next().unwrap(),
+        }
+    }
+}
+impl SavableParams for SimpleRnnlmParams {
+    fn param_names() -> (Vec<&'static str>, Vec<&'static str>) {
+        (
+            vec!["rnn_b", "affine_b"],
+            vec!["embed_w", "rnn_wx", "rnn_wh", "affine_w"],
+        )
+    }
+    fn params_to_save(&self) -> Vec<(&Save, &str)> {
+        vec![
+            (&self.embed_w, "embed_w"),
+            (&self.rnn_wx, "rnn_wx"),
+            (&self.rnn_wh, "rnn_wh"),
+            (&self.rnn_b, "rnn_b"),
+            (&self.affine_w, "affine_w"),
+            (&self.affine_b, "affine_b"),
+        ]
+    }
+    fn load_new(params1: Vec<P1<Arr1d>>, params2: Vec<P1<Arr2d>>) -> Self {
+        // next.unwrap多すぎ
+        let mut params1 = params1.into_iter();
+        let mut params2 = params2.into_iter();
+        Self {
+            embed_w: params2.next().unwrap(),
+            rnn_wx: params2.next().unwrap(),
+            rnn_wh: params2.next().unwrap(),
+            rnn_b: params1.next().unwrap(),
+            affine_w: params2.next().unwrap(),
             affine_b: params1.next().unwrap(),
         }
     }
