@@ -316,3 +316,12 @@ pub fn test_pickup() {
     // putsl!(pickup0(&arr, Axis(0), &[1, 1, 1][..])); // 明示的にsliceにしたのでok
     putsl!(pickup(&arr, Axis(0), &[1, 1, 1, 2, 2])); // そもそも引数が&[usize]なので、型推論される
 }
+
+pub fn replace_item<T: Eq + Clone>(mut v: Vec<T>, prev: T, new: T) -> Vec<T> {
+    for i in v.iter_mut() {
+        if *i == prev {
+            *i = new.clone()
+        }
+    }
+    v
+}

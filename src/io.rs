@@ -3,6 +3,7 @@ use csv::{ReaderBuilder, WriterBuilder};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io;
+use std::iter::FromIterator;
 // extern crate ndarray;
 use crate::model::rnn::{RnnlmLSTMParams, SavableParams};
 use crate::params::{Param, P1};
@@ -81,7 +82,7 @@ where
     for<'de> T: Deserialize<'de>,
 {
     fn load_from_csv(filename: &str) -> Result<Self, Box<dyn Error>> {
-        csv_to_array(filename).map(|res| res.outer_iter().next().unwrap().to_owned())
+        csv_to_array(filename).map(|res| Array::from_iter(res.iter().cloned()))
     }
 }
 impl<T: Load + Default> Load for P1<T> {
@@ -104,21 +105,36 @@ impl<SP: SavableParams> Load for SP {
         // ↓全く同じ3行を書かなければならないのだろうか...
         let params1 = name1
             .into_iter()
-            .map(|name| P1::load_from_csv(&format!("{}/{}", filename, name)))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|name| P1::load_from_csv(&format!("{}/{}.csv", filename, name)))
+            .collect::<Result<_, _>>()?; //  Iter<Reslut>はVec<Reslut>にもResult<Vec>にもcollectできる
         let params2 = name2
             .into_iter()
-            .map(|name| P1::load_from_csv(&format!("{}/{}", filename, name)))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|name| P1::load_from_csv(&format!("{}/{}.csv", filename, name)))
+            .collect::<Result<_, _>>()?;
         Ok(SP::load_new(params1, params2))
     }
 }
 
+#[test]
+fn params_load_test() {
+    const MODEL_FILE_NAME: &str = "./data/BetterRnnlm";
+    let params = RnnlmLSTMParams::load_from_csv(MODEL_FILE_NAME).expect("error in loading params!");
+    params.summary();
+}
+
+use std::time::Instant;
 pub fn csv_to_array<T: Copy>(filename: &str) -> Result<Array2<T>, Box<dyn Error>>
 where
     for<'de> T: Deserialize<'de>,
 {
+    let now = Instant::now();
     let v: Vec<Vec<T>> = read_csv(filename)?;
+    println!(
+        "{} secs to lead ({}, {})",
+        now.elapsed().as_secs(),
+        v.len(),
+        v[0].len()
+    );
     Ok(Array::from_shape_fn((v.len(), v[0].len()), |(i, j)| {
         v[i][j]
     }))
@@ -159,14 +175,18 @@ mod tests {
     use super::*;
     #[test]
     fn read_csv_test() {
-        // let v: Vec<Vec<f32>> = read_csv("./data/spiral/x.csv").unwrap();
-        // let arr = Array::from_shape_fn((v.len(), 2), |(i, j)| v[i][j]);
-        let arr = csv_to_array::<f32>("./data/spiral/t.csv").unwrap();
-        // println!("{:?}", arr);
-        // let c = read_csv::<(usize, String)>("./data/ptb/id.csv").expect("error!!!");
-        arr.save_as_csv("hoge.csv");
-        // putsl!(c);
-        use ndarray::Array1;
-        Array1::<f32>::zeros((10,)).save_as_csv("zerozero.csv");
+        // // let v: Vec<Vec<f32>> = read_csv("./data/spiral/x.csv").unwrap();
+        // // let arr = Array::from_shape_fn((v.len(), 2), |(i, j)| v[i][j]);
+        // let arr = csv_to_array::<f32>("./data/spiral/t.csv").unwrap();
+        // // println!("{:?}", arr);
+        // // let c = read_csv::<(usize, String)>("./data/ptb/id.csv").expect("error!!!");
+        // arr.save_as_csv("hoge.csv");
+        // // putsl!(c);
+        // use ndarray::Array1;
+        // Array1::<f32>::zeros((10,)).save_as_csv("zerozero.csv");
+
+        csv_to_array::<f32>(
+            "/Users/kamohara_jun/Documents/projects/dlfs/rust/data/BetterRnnlm/affine_w.csv",
+        );
     }
 }

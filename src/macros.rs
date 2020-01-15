@@ -11,7 +11,7 @@ macro_rules! putsd {
     ($( $x:expr), *) => {
         $(
             print!("{}= {:?}; ", stringify!($x), $x);
-        )*        println!();
+        )*
 
     };
 }

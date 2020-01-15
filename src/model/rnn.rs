@@ -212,7 +212,7 @@ impl<'a> SimpleRnnlmLSTM<'a> {
 
 pub struct RnnlmLSTM<'a> {
     vocab_size: usize,
-    wordvec_size: usize,
+    time_size: usize,
     embed: TimeEmbedding<'a>,
     dropouts: [Dropout<Ix3>; 3],
     rnn: [TimeLSTM<'a>; 2],
@@ -269,20 +269,23 @@ impl<'a> RnnlmLSTMParams {
             lstm_wx2,
             lstm_wh2,
             lstm_b2,
-            affine_w,
+            affine_w, // (hidden_size, vocab_size)
             affine_b,
         }
     }
+    pub fn summary(&self) {
+        putsd!(self.affine_w.p().dim());
+        putsd!(self.affine_w.t().p().dim());
+        putsd!(self.lstm_b1.p().dim());
+        putsd!(self.lstm_wx1.p().dim());
+        putsd!(self.lstm_b2.p().dim());
+        putsd!(self.lstm_wx2.p().dim());
+    }
 }
 impl<'a> RnnlmLSTM<'a> {
-    pub fn new(
-        vocab_size: usize,
-        wordvec_size: usize,
-        time_size: usize,
-        dropout_ratio: f32,
-        params: &'a RnnlmLSTMParams,
-    ) -> Self {
+    pub fn new(time_size: usize, dropout_ratio: f32, params: &'a RnnlmLSTMParams) -> Self {
         let embed = TimeEmbedding::new(params.affine_w.t());
+        let vocab_size = params.affine_w.p().dim().1;
         let lstm1 = TimeLSTM::new(
             &params.lstm_wx1,
             &params.lstm_wh1,
@@ -298,7 +301,7 @@ impl<'a> RnnlmLSTM<'a> {
         let affine = TimeAffine::new(&params.affine_w, &params.affine_b);
         Self {
             vocab_size,
-            wordvec_size,
+            time_size,
             embed,
             dropouts: [
                 Dropout::new(dropout_ratio),
@@ -309,6 +312,16 @@ impl<'a> RnnlmLSTM<'a> {
             affine,
             loss_layer: Default::default(),
         }
+    }
+    pub fn predict(&mut self, x: Array2<usize>) -> Arr2d {
+        let mut x = self.embed.forward(x);
+        for i in 0..2 {
+            // dropoutなし
+            x = self.rnn[i].forward(x);
+        }
+        let x = remove_axis(x); // x: (timebatch, hidden)
+        let x = self.affine.forward(x); // x: (timebatch, vocab) <- さっきのxと各全ての単語との内積を取る
+        self.loss_layer.predict(x) // (timebatch, vocab) <- 各単語の確率
     }
 }
 
@@ -368,19 +381,19 @@ pub trait SavableParams {
 impl SavableParams for RnnlmLSTMParams {
     fn param_names() -> (Vec<&'static str>, Vec<&'static str>) {
         (
-            vec!["embed_w", "lstm_wx1", "lstm_wx2", "lstm_wx2", "lstm_wh2"],
-            vec!["lstm_b1", "lstm_b2", "affine_b"],
+            vec!["lstm1_b", "lstm2_b", "affine_b"],
+            vec!["embed_w", "lstm1_wx", "lstm1_wh", "lstm2_wx", "lstm2_wh"],
         )
     }
     fn params_to_save(&self) -> Vec<(&Save, &str)> {
         vec![
             (self.affine_w.t(), "embed_w"),
-            (&self.lstm_wx1, "lstm_wx1"),
-            (&self.lstm_wh1, "lstm_wx2"),
-            (&self.lstm_b1, "lstm_b1"),
-            (&self.lstm_wx2, "lstm_wx2"),
-            (&self.lstm_wh2, "lstm_wh2"),
-            (&self.lstm_b2, "lstm_b2"),
+            (&self.lstm_wx1, "lstm1_wx"),
+            (&self.lstm_wh1, "lstm1_wh"),
+            (&self.lstm_b1, "lstm1_b"),
+            (&self.lstm_wx2, "lstm2_wx"),
+            (&self.lstm_wh2, "lstm2_wh"),
+            (&self.lstm_b2, "lstm2_b"),
             (&self.affine_b, "affine_b"),
         ]
     }
@@ -400,5 +413,56 @@ impl SavableParams for RnnlmLSTMParams {
             affine_w: embed_w.t(),
             affine_b: params1.next().unwrap(),
         }
+    }
+}
+
+pub trait RnnlmGen {
+    fn generate(
+        &mut self,
+        start_ids: usize,
+        skip_ids: Vec<usize>,
+        sample_size: usize,
+    ) -> Vec<usize>;
+}
+use std::collections::HashMap;
+impl RnnlmGen for RnnlmLSTM<'_> {
+    fn generate(
+        &mut self,
+        start_id: usize,
+        skip_ids: Vec<usize>,
+        sample_size: usize,
+    ) -> Vec<usize> {
+        assert_eq!(self.time_size, 1, "for rnnlmgen, self.time_size must be 1!");
+        let mut word_ids = vec![start_id]; // ここに次の単語を追加していく
+        let mut rng = thread_rng(); // random number generator
+        for _ in 0..sample_size {
+            let mut prob = self // 前回のサンプルを元に次の単語を予測
+                .predict(Array2::from_elem((1, 1), word_ids[word_ids.len()-1]))
+                .into_shape((self.vocab_size,))
+                .unwrap();
+            for i in &skip_ids {
+                // まずい単語の確率をゼロにする
+                prob[[*i]] = 0.0;
+            }
+            let dist = WeightedIndex::new(&prob).unwrap();
+            let sample = dist.sample(&mut rng);
+            // id_to_word.map(|dic| print!("{} ", dic[&sample]));
+            word_ids.push(sample);
+        }
+        word_ids
+    }
+}
+
+use rand::distributions::{Distribution, WeightedIndex};
+use rand::prelude::thread_rng;
+#[test]
+fn hello_rand() {
+    let choices = ['a', 'b', 'c'];
+    let weights = [2, 1, 0];
+    let dist = WeightedIndex::new(&weights).unwrap();
+    let mut rng = thread_rng();
+    for _ in 0..100 {
+        // 50% chance to print 'a', 25% chance to print 'b', 25% chance to print 'c'
+        println!("{}", choices[dist.sample(&mut rng)]);
     }
 }
