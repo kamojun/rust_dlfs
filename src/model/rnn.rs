@@ -41,6 +41,11 @@ pub trait RnnlmParams {
         let rate = (clip / (norm + 1e-6)).min(1.0) * lr;
         self.update_lr(rate);
     }
+    fn reset_grads(&self) {
+        for param in self.params() {
+            param.reset_grads();
+        }
+    }
     fn params(&self) -> Vec<&Update>;
 }
 impl RnnlmParams for SimpleRnnlmParams {
@@ -192,7 +197,13 @@ impl<'a> SimpleRnnlmLSTM<'a> {
         params: &'a SimpleRnnlmParams,
     ) -> Self {
         let embed = TimeEmbedding::new(&params.embed_w);
-        let rnn = TimeLSTM::new(&params.rnn_wx, &params.rnn_wh, &params.rnn_b, time_size);
+        let rnn = TimeLSTM::new(
+            &params.rnn_wx,
+            &params.rnn_wh,
+            &params.rnn_b,
+            time_size,
+            true,
+        );
         let affine = TimeAffine::new(&params.affine_w, &params.affine_b);
         Self {
             vocab_size,
@@ -287,12 +298,14 @@ impl<'a> RnnlmLSTM<'a> {
             &params.lstm_wh1,
             &params.lstm_b1,
             time_size,
+            true,
         );
         let lstm2 = TimeLSTM::new(
             &params.lstm_wx2,
             &params.lstm_wh2,
             &params.lstm_b2,
             time_size,
+            true,
         );
         let affine = TimeAffine::new(&params.affine_w, &params.affine_b);
         Self {

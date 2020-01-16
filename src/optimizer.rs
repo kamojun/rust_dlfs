@@ -20,38 +20,76 @@ fn update_lr(params: Vec<&Update>, lr: f32) {
     }
 }
 
-pub struct NewSGD<'a> {
+pub struct NewSGD {
     pub lr: f32,
     clip: f32,
-    params: Vec<&'a Update>,
 }
 
-impl<'a> NewSGD<'a> {
-    pub fn new(lr: f32, clip: f32, params: Vec<&'a Update>) -> Self {
-        Self { lr, clip, params }
+impl<'a> NewSGD {
+    pub fn new(lr: f32, clip: f32) -> Self {
+        Self { lr, clip }
     }
-    pub fn update(&self) {
-        self.update_lr(self.lr);
+    pub fn update(&self, params: &Vec<&'a Update>) {
+        self.update_lr(self.lr, params);
     }
-    pub fn update_lr(&self, lr: f32) {
-        for param in self.params.iter() {
+    pub fn update_lr(&self, lr: f32, params: &Vec<&'a Update>) {
+        for param in params.iter() {
             param.update_lr(self.lr);
         }
     }
-    pub fn update_clip_lr(&self) {
-        for param in self.params.iter() {
+    pub fn update_clip_lr(&self, params: &Vec<&'a Update>) {
+        for param in params.iter() {
             param.update_clip_lr(self.clip, self.lr);
         }
     }
-    pub fn update_clipgrads(&self) {
-        let norm = self
-            .params
+    pub fn update_clipgrads(&self, params: &Vec<&'a Update>) {
+        let norm = params
             .iter()
             .map(|x| x.grads_norm_squared())
             .sum::<f32>()
             .sqrt();
         let rate = (self.clip / (norm + 1e-6)).min(1.0) * self.lr;
-        self.update_lr(rate);
+        self.update_lr(rate, params);
+    }
+}
+
+pub struct NewAdam {
+    lr: f32,
+    beta1: f32,
+    beta2: f32,
+    iter: i32,
+    max_grad: f32,
+}
+impl<'a> NewAdam {
+    pub fn new(lr: f32, max_grad: f32) -> Self {
+        Self {
+            lr,
+            beta1: 0.9,
+            beta2: 0.999,
+            iter: 0,
+            max_grad,
+        }
+    }
+    pub fn update(&mut self, params: &Vec<&'a Update>) {
+        self.iter += 1;
+        let lr_t = self.lr * (1.0 - self.beta1.powi(self.iter)).sqrt()
+            / (1.0 - self.beta1.powi(self.iter));
+        for param in params.iter() {
+            param.update_adam(lr_t, self.beta1, self.beta2);
+        }
+    }
+    pub fn clipgrads(&self, params: &Vec<&'a Update>) {
+        let norm = params
+            .iter()
+            .map(|x| x.grads_norm_squared())
+            .sum::<f32>()
+            .sqrt();
+        let rate = (self.max_grad / (norm + 1e-6)).min(1.0);
+        if rate < 1.0 {
+            for param in params.iter() {
+                param.clip_grads(rate);
+            }
+        }
     }
 }
 

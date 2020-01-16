@@ -281,6 +281,7 @@ impl<'a> LSTM<'a> {
 pub struct TimeLSTM<'a> {
     h: Arr2d,       // 順伝播の時は、前回のhを用いる
     c: Arr2d,       // 同様にcも用いる
+    pub dh: Arr2d, // 誤差逆伝播では基本的に勾配を渡すことはない(したがって1回のbackward関数内で保持すれば良い)のだが、encoder-decoderの時は、decoderからencoderに渡す必要がある。
     stateful: bool, // 前回のhを保持するかどうか
     time_size: usize,
     channel_size: usize,
@@ -289,7 +290,13 @@ pub struct TimeLSTM<'a> {
 }
 
 impl<'a> TimeLSTM<'a> {
-    pub fn new(wx: &'a P1<Arr2d>, wh: &'a P1<Arr2d>, b: &'a P1<Arr1d>, time_size: usize) -> Self {
+    pub fn new(
+        wx: &'a P1<Arr2d>,
+        wh: &'a P1<Arr2d>,
+        b: &'a P1<Arr1d>,
+        time_size: usize,
+        stateful: bool,
+    ) -> Self {
         let (channel_size, mut hidden_size) = wx.p().dim();
         hidden_size /= 4; // wxは(channel, 4*hidden)
         let layers: Vec<_> = (0..time_size)
@@ -304,10 +311,11 @@ impl<'a> TimeLSTM<'a> {
             layers,
             h: Default::default(),
             c: Default::default(),
+            dh: Default::default(),
             time_size,
             channel_size,
             hidden_size,
-            stateful: false,
+            stateful,
         }
     }
     pub fn forward(&mut self, xs: Arr3d) -> Arr3d {
@@ -317,7 +325,9 @@ impl<'a> TimeLSTM<'a> {
         // h, c共に初期化する
         if !self.stateful || self.h.len() == 0 {
             self.h = Arr2d::zeros((batch_size, self.hidden_size));
-            self.c = self.h.clone();
+        }
+        if !self.stateful || self.c.len() == 0 {
+            self.c = Arr2d::zeros((batch_size, self.hidden_size));
         }
         for (layer, xst, mut hst) in izip!(
             self.layers.iter_mut(),
@@ -341,6 +351,12 @@ impl<'a> TimeLSTM<'a> {
             self.h.dim().0,
             "you have to set the right state h"
         );
+        if !self.stateful || self.h.len() == 0 {
+            self.h = Arr2d::zeros((batch_size, self.hidden_size));
+        }
+        if !self.stateful || self.c.len() == 0 {
+            self.c = Arr2d::zeros((batch_size, self.hidden_size));
+        }
         let (_h, _c) = self.layers[0].forward(xs, self.h.clone(), self.c.clone());
         // hs.assign(&_h);
         self.h = _h;
@@ -350,8 +366,8 @@ impl<'a> TimeLSTM<'a> {
     pub fn backward(&mut self, dhs: Arr3d) -> Arr3d {
         let batch_size = dhs.len() / (self.time_size * self.hidden_size);
         let mut dxs = Arr3d::zeros((batch_size, self.time_size, self.channel_size));
-        /// このdh, dcはLSTMの相互入出力に関する勾配
-        /// hに関しては、上流から来るdhsもあるが、全く別物
+        /// 誤差逆伝播については、dh, dcはゼロから始める
+        /// 順伝播についてはstateful=trueの場合は一つ前のiter(その場合は自分で保存)や隣のencoderから受け取って初期化していた
         let mut dh = Arr2d::zeros((batch_size, self.hidden_size));
         let mut dc = dh.clone();
         for (layer, mut dxt, dht) in (izip!(
@@ -367,6 +383,7 @@ impl<'a> TimeLSTM<'a> {
             dc = _dc;
             dxt.assign(&_dx);
         }
+        self.dh = dh;
         dxs
     }
     pub fn conv_2d_3d(&self, x: Arr2d) -> Arr3d {
@@ -378,8 +395,8 @@ impl<'a> TimeLSTM<'a> {
         self.h = Default::default();
         self.c = Default::default();
     }
-    pub fn set_state(&mut self, h: Arr2d) {
-        self.h = h;
-        self.c = Array2::zeros(self.h.dim());
+    pub fn set_state(&mut self, h: Option<Arr2d>, c: Option<Arr2d>) {
+        self.h = h.unwrap_or_default();
+        self.c = c.unwrap_or_default();
     }
 }

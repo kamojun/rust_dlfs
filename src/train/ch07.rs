@@ -1,10 +1,11 @@
 use crate::io::*;
 use crate::model::rnn::*;
 use crate::model::seq2seq::*;
-use crate::optimizer::NewSGD;
-use crate::trainer::RnnlmTrainer;
-use crate::util::replace_item;
-use ndarray::{array, Array2};
+use crate::optimizer::{NewAdam, NewSGD};
+use crate::trainer::{RnnlmTrainer, Seq2SeqTrainer};
+use crate::types::*;
+use crate::util::*;
+use ndarray::{array, Array2, Axis};
 use std::collections::HashMap;
 
 fn gen_text() {
@@ -47,7 +48,6 @@ fn gen_text() {
     println!("{}", txt);
 }
 
-type Seq = Array2<usize>;
 use itertools::concat;
 /// 16+75  _91  
 /// 52+607 _659
@@ -56,7 +56,7 @@ use itertools::concat;
 /// 問題, 答え, 記号一覧を返す
 use std::collections::HashSet;
 fn load_additon_text(filename: &str) -> (Seq, Seq, Vec<char>, HashMap<char, usize>) {
-    let raw = read_txt(filename).unwrap();
+    let raw = read_txt(filename).expect(&format!("couldn't load {}", filename));
     let mut charset = HashSet::new();
     for _r in raw.iter() {
         for c in _r.iter() {
@@ -73,18 +73,35 @@ fn load_additon_text(filename: &str) -> (Seq, Seq, Vec<char>, HashMap<char, usiz
     let t = Array2::from_shape_fn((raw.len(), tlen), |(i, j)| char_to_id[&raw[i][xlen + j]]);
     (x, t, charvec, char_to_id)
 }
+fn eval_seq2seq(
+    model: &mut Seq2Seq,
+    question: Seq,
+    answer: Seq,
+    chars: Vec<usize>,
+    verbose: bool,
+    is_reverse: bool,
+) {
+}
 fn train_seq2seq() {
-    let (x, t, chars, char_to_id) = load_additon_text("./data/addition.txt");
-    putsl!(x, t, chars, char_to_id);
-    let vocab_size = chars.len();
     const WORDVEC_SIZE: usize = 16;
     const HIDDEN_SIZE: usize = 128;
     const BATCH_SIZE: usize = 128;
     const MAX_EPOCH: usize = 25;
     const MAX_GRAD: f32 = 5.0;
     const LR: f32 = 0.1;
-    let encoder_time_size = x.dim().1;
-    let decoder_time_size = t.dim().1;
+    const REVERSED: bool = true;
+    let (x, t, chars, char_to_id) = load_additon_text("./data/addition.txt");
+    let input_len = x.dim().1;
+    if REVERSED {
+        // 入力反転
+        let x = Array2::from_shape_fn((x.dim()), |(i, j)| x[[i, input_len - j - 1]]);
+    }
+    putsl!(x.index_axis(Axis(0), 0), t.index_axis(Axis(0), 0), chars);
+    let ((x_train, t_train), (x_test, t_test)) = test_train_split(x, t, (9, 1));
+    putsl!(x_train.dim(), t_train.dim(), x_test.dim(), t_test.dim());
+    let vocab_size = chars.len();
+    let encoder_time_size = input_len; // encoderの入力は計算式の左辺全体
+    let decoder_time_size = t_train.dim().1 - 1; // decoderは右辺の入力から、一つずらしたものを出力するので、入力長は一つ短い
     let encoder_params = EncoderParams::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
     let decoder_params = SimpleRnnlmParams::new_for_Decoder(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
     let model = Seq2Seq::new(
@@ -93,15 +110,24 @@ fn train_seq2seq() {
         &encoder_params,
         &decoder_params,
     );
-    let optimizer = NewSGD::new(
-        LR,
-        MAX_GRAD,
+    let optimizer = NewAdam::new(LR, MAX_GRAD);
+    let mut trainer = Seq2SeqTrainer::new(
+        model,
         concat(vec![encoder_params.params(), decoder_params.params()]),
+        optimizer,
     );
-
-    let mut trainer = RnnlmTrainer::new(model, optimizer);
-    trainer.fit_seq2seq(x, t, MAX_EPOCH, BATCH_SIZE, Some(20), None);
+    trainer.fit(
+        x_train,
+        t_train,
+        MAX_EPOCH,
+        BATCH_SIZE,
+        Some(20),
+        Some((x_test, t_test, chars)),
+        false,
+    );
+    // trainer.eval(&x_test, &t_test, &chars);
     trainer.print_ppl();
+    trainer.print_acc();
 }
 
 #[test]

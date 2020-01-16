@@ -1,4 +1,5 @@
 extern crate ndarray;
+use crate::params::Update;
 use crate::types::*;
 use ndarray::{
     Array, Array1, Array2, Array3, ArrayView1, Axis, Dimension, Ix2, Ix3, RemoveAxis, Slice,
@@ -332,4 +333,24 @@ pub fn remove_axis<T, D: RemoveAxis>(a: Array<T, D>) -> Array<T, D::Smaller> {
     let f = d.remove(1);
     d[0] *= f;
     a.into_shape(d).unwrap().into_dimensionality().unwrap()
+}
+
+pub fn test_train_split<T: Zero + Copy, D: RemoveAxis>(
+    x: Array<T, D>,
+    t: Array<T, D>,
+    ratio: (usize, usize),
+) -> ((Array<T, D>, Array<T, D>), (Array<T, D>, Array<T, D>)) {
+    let data_len = x.shape()[0];
+    assert_eq!(data_len, t.shape()[0], "x and t must have same length!");
+    let idx = random_index(data_len);
+    let split_here = data_len * ratio.0 / (ratio.0 + ratio.1);
+    let x_train = pickup(&x, Axis(0), &idx[..split_here]);
+    let t_train = pickup(&t, Axis(0), &idx[..split_here]);
+    let x_test = pickup(&x, Axis(0), &idx[split_here..]);
+    let t_test = pickup(&t, Axis(0), &idx[split_here..]);
+    ((x_train, t_train), (x_test, t_test))
+}
+
+pub fn rev_string(s: String) -> String {
+    s.chars().rev().collect()
 }

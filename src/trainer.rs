@@ -1,7 +1,9 @@
 use crate::io::*;
 use crate::model::rnn::*;
+use crate::model::seq2seq::*;
 use crate::model::*;
-use crate::optimizer::{AdaGrad, NewSGD, Optimizer, SGD};
+use crate::optimizer::{AdaGrad, NewAdam, NewSGD, Optimizer, SGD};
+use crate::params::Update;
 use crate::types::*;
 use crate::util::*;
 use itertools::izip;
@@ -9,18 +11,138 @@ use itertools::izip;
 // use ndarray::iter::AxisChunksIter;
 use ndarray::{s, Array, Array1, Array2, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
+pub struct Seq2SeqTrainer<'a> {
+    pub model: Seq2Seq<'a>,
+    optimizer: NewAdam,
+    params: Vec<&'a Update>,
+    ppl_list: Vec<f32>,
+    acc_list: Vec<f32>,
+    max_iters: usize,
+}
+impl<'a> Seq2SeqTrainer<'a> {
+    pub fn new(model: Seq2Seq<'a>, params: Vec<&'a Update>, optimizer: NewAdam) -> Self {
+        Self {
+            model,
+            params,
+            optimizer,
+            ppl_list: Vec::new(),
+            acc_list: Vec::new(),
+            max_iters: 0,
+        }
+    }
+    pub fn print_ppl(&self) {
+        putsd!(self.ppl_list);
+    }
+    pub fn print_acc(&self) {
+        putsd!(self.acc_list);
+    }
+    fn print_progress(
+        &mut self,
+        epoch: usize,
+        iter: usize,
+        start_time: std::time::Instant,
+        ppl: f32,
+    ) {
+        let elapsed_time = std::time::Instant::now() - start_time;
+        println!(
+            "|epoch {}| iter {}/{} | time {}[s] | perplexity {}",
+            epoch,
+            iter + 1,
+            self.max_iters,
+            elapsed_time.as_secs(),
+            ppl
+        );
+        self.ppl_list.push(ppl);
+    }
+    pub fn fit(
+        &mut self,
+        x_train: Array2<usize>,
+        t_train: Array2<usize>,
+        max_epoch: usize,
+        batch_size: usize,
+        eval_interval: Option<usize>,
+        eval_problem: Option<(Seq, Seq, Vec<char>)>,
+        reversed: bool,
+    ) {
+        let data_len = x_train.dim().0;
+        self.max_iters = data_len / batch_size;
+        let start_time = std::time::Instant::now();
+        let eval_interval = eval_interval.unwrap_or(self.max_iters);
+        let (x_test, t_test, chars) = eval_problem.unwrap_or_default();
+        let do_eval = x_test.len() > 0;
+        for epoch in 1..=max_epoch {
+            let epoch_idx = random_index(data_len);
+            let epoch_data = pickup(&x_train, Axis(0), &epoch_idx);
+            let epoch_target = pickup(&t_train, Axis(0), &epoch_idx);
+            let mut eval_loss = 0.0;
+            for (iter, (batch_x, batch_t)) in (izip![
+                epoch_data.axis_chunks_iter(Axis(0), batch_size),
+                epoch_target.axis_chunks_iter(Axis(0), batch_size)
+            ])
+            .enumerate()
+            {
+                eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
+                self.model.backward();
+                self.optimizer.clipgrads(&self.params);
+                self.optimizer.update(&self.params);
+                if (iter + 1) % eval_interval == 0 {
+                    let ppl = (eval_loss / eval_interval as f32).exp();
+                    self.print_progress(epoch, iter, start_time, ppl);
+                    eval_loss = 0.0;
+                }
+            }
+            if do_eval {
+                self.eval(&x_test, &t_test, &chars, reversed);
+            }
+        }
+    }
+    pub fn eval(&mut self, x_test: &Seq, t_test: &Seq, chars: &Vec<char>, reversed: bool) {
+        let mut correct_count = 0.0;
+        let start_id = t_test[[0, 0]];
+        let sample_size = t_test.dim().1 - 1; // t_testの2つ目以降を予測する
+        for (i, (_x, _t)) in x_test
+            .axis_chunks_iter(Axis(0), 1)
+            .zip(t_test.axis_chunks_iter(Axis(0), 1))
+            .enumerate()
+        {
+            let guess = self.model.generate(_x.to_owned(), start_id, sample_size);
+            self.params.iter().inspect(|p| p.reset_grads());
+            let is_correct = _t.iter().zip(guess.iter()).all(|(a, g)| a == g); // answerとguessを比較
+            correct_count += if is_correct { 1.0 } else { 0.0 };
+            if i < 10 {
+                let mut problem: String = _x.iter().map(|i| chars[*i]).collect();
+                let guess: String = guess.iter().map(|i| chars[*i]).collect();
+                let ans: String = _t.iter().map(|i| chars[*i]).collect();
+                if reversed {
+                    problem = rev_string(problem)
+                }
+                println!("{}{}", problem, ans);
+                println!("{}{}", problem, guess);
+                println!("{}", if guess == ans { "collect!" } else { "wrong!" });
+            }
+        }
+        let acc = correct_count / x_test.dim().0 as f32;
+        putsd!(acc);
+        self.acc_list.push(acc);
+    }
+}
+
 pub struct RnnlmTrainer<'a, R: Rnnlm> {
     pub model: R,
-    optimizer: NewSGD<'a>,
+    optimizer: NewSGD,
+    params: Vec<&'a Update>,
     ppl_list: Vec<f32>,
+    acc_list: Vec<f32>,
     max_iters: usize,
 }
 impl<'a, R: Rnnlm> RnnlmTrainer<'a, R> {
-    pub fn new(model: R, optimizer: NewSGD<'a>) -> Self {
+    pub fn new(model: R, optimizer: NewSGD, params: Vec<&'a Update>) -> Self {
         Self {
             model,
+            params,
             optimizer,
             ppl_list: Vec::new(),
+            acc_list: Vec::new(),
             max_iters: 0,
         }
     }
@@ -67,37 +189,6 @@ impl<'a, R: Rnnlm> RnnlmTrainer<'a, R> {
         *time_position += time_shift; // 次の1列目はこの位置に来る
         (xsa, tsa)
     }
-    pub fn fit_seq2seq(
-        &mut self,
-        x_train: Array2<usize>,
-        t_train: Array2<usize>,
-        max_epoch: usize,
-        batch_size: usize,
-        eval_interval: Option<usize>,
-        corpus_val: Option<&Vec<usize>>,
-    ) {
-        self.max_iters = x_train.dim().0 / batch_size;
-        let start_time = std::time::Instant::now();
-        let eval_interval = eval_interval.unwrap_or(self.max_iters);
-        for epoch in 1..=max_epoch {
-            let mut eval_loss = 0.0;
-            for (iter, (batch_x, batch_t)) in (izip![
-                x_train.axis_chunks_iter(Axis(0), batch_size),
-                t_train.axis_chunks_iter(Axis(0), batch_size)
-            ])
-            .enumerate()
-            {
-                eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
-                self.model.backward();
-                self.optimizer.update_clip_lr();
-                if (iter + 1) % eval_interval == 0 {
-                    let ppl = (eval_loss / eval_interval as f32).exp();
-                    self.print_progress(epoch, iter, start_time, ppl);
-                    eval_loss = 0.0;
-                }
-            }
-        }
-    }
     pub fn fit(
         &mut self,
         corpus: &Vec<usize>,
@@ -122,7 +213,7 @@ impl<'a, R: Rnnlm> RnnlmTrainer<'a, R> {
             for (iter, (batch_x, batch_t)) in x_batches.zip(t_batches).enumerate() {
                 eval_loss += self.model.forward(batch_x.to_owned(), batch_t.to_owned());
                 self.model.backward();
-                self.optimizer.update_clip_lr();
+                self.optimizer.update_clip_lr(&self.params);
                 // self.optimizer.update();
                 if (iter + 1) % eval_interval == 0 {
                     let ppl = (eval_loss / eval_interval as f32).exp();

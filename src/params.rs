@@ -17,8 +17,9 @@ pub struct P1<T: Default> {
     _p: RefCell<T>,
     /// 学習によって得られた勾配
     grads: RefCell<Vec<T>>,
-    // /// optimizerが使う情報
-    // cache: RefCell<Vec<T>>,
+    /// optimizerが使う情報
+    /// adam -> (initialize, m, v)
+    cache_adam: RefCell<(bool, T, T)>,
 }
 impl<T: Default> P1<T> {
     pub fn new(p: T) -> Self {
@@ -54,6 +55,11 @@ pub trait Update {
     fn grads_norm_squared(&self) -> f32;
     fn update_lr(&self, lr: f32);
     fn update_clip_lr(&self, clip: f32, lr: f32);
+    fn clip_grads(&self, rate: f32);
+    fn reset_grads(&self);
+    fn update_adam(&self, lr: f32, beta1: f32, beta2: f32) {
+        unimplemented!();
+    }
 }
 impl<D: Dimension> Update for P1<Array<f32, D>> {
     fn grads_norm_squared(&self) -> f32 {
@@ -71,6 +77,29 @@ impl<D: Dimension> Update for P1<Array<f32, D>> {
         g *= (clip / (norm + 1e-6)).min(1.0) * lr;
         *self._p.borrow_mut() -= &g;
         *self.grads.borrow_mut() = Vec::new();
+    }
+    fn reset_grads(&self) {
+        *self.grads.borrow_mut() = Vec::new();
+    }
+    fn clip_grads(&self, rate: f32) {
+        for ref mut g in self.grads.borrow_mut().iter() {
+            *g = &(g.clone() * rate);
+        }
+    }
+    fn update_adam(&self, lr: f32, beta1: f32, beta2: f32) {
+        let g = self.grads_sum();
+        // ref mutと言う文法
+        // mやvからはmove outできないので、&*m, &*vのようにして使う。
+        let (ref mut initialized, ref mut m, ref mut v) = *self.cache_adam.borrow_mut();
+        if !*initialized {
+            *m = Array::zeros(g.dim());
+            *v = Array::zeros(g.dim());
+            *initialized = true;
+        }
+        *m = (&g - &*m) * (1.0 - beta1);
+        *v = (g.mapv(|x| x.powi(2)) - &*v) * (1.0 - beta2); // こっちはgを2乗する
+        *self._p.borrow_mut() -= &(&*m * lr / (v.mapv(f32::sqrt) + 1e-7));
+        self.reset_grads();
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::io::*;
 use crate::layers::loss_layer::*;
 use crate::layers::time_layers::*;
-use crate::model::rnn::{Rnnlm, RnnlmParams, SavableParams, SimpleRnnlmParams};
+use crate::model::rnn::{Rnnlm, RnnlmGen, RnnlmParams, SavableParams, SimpleRnnlmParams};
 use crate::params::*;
 use crate::types::*;
 use crate::util::{randarr, remove_axis};
@@ -69,7 +69,14 @@ pub struct Encoder<'a> {
 impl<'a> Encoder<'a> {
     pub fn new(time_size: usize, params: &'a EncoderParams) -> Self {
         let embed = TimeEmbedding::new(&params.embed_w);
-        let lstm = TimeLSTM::new(&params.rnn_wx, &params.rnn_wh, &params.rnn_b, time_size);
+        // stateful=falseというのは、毎回のtime方向が独立しているということ
+        let lstm = TimeLSTM::new(
+            &params.rnn_wx,
+            &params.rnn_wh,
+            &params.rnn_b,
+            time_size,
+            false,
+        );
         Self {
             embed,
             lstm,
@@ -102,7 +109,14 @@ pub struct Decoder<'a> {
 impl<'a> Decoder<'a> {
     pub fn new(time_size: usize, params: &'a SimpleRnnlmParams) -> Self {
         let embed = TimeEmbedding::new(&params.embed_w);
-        let lstm = TimeLSTM::new(&params.rnn_wx, &params.rnn_wh, &params.rnn_b, time_size);
+        // stateful=trueなのは、Encoderからhを受け取るから。
+        let lstm = TimeLSTM::new(
+            &params.rnn_wx,
+            &params.rnn_wh,
+            &params.rnn_b,
+            time_size,
+            true,
+        );
         let affine = TimeAffine::new(&params.affine_w, &params.affine_b);
         Self {
             embed,
@@ -112,7 +126,8 @@ impl<'a> Decoder<'a> {
     }
     fn forawrd(&mut self, idx: Array2<usize>, h: Arr2d) -> Arr2d {
         // Encoderから端っこのhを受け取ってset_stateする
-        self.lstm.set_state(h);
+        // lstmのstateとしてはcもあるが、これは引き継がない
+        self.lstm.set_state(Some(h), None);
         let xs = self.embed.forward(idx);
         let hs = remove_axis(self.lstm.forward(xs));
         self.affine.forward(hs)
@@ -122,23 +137,30 @@ impl<'a> Decoder<'a> {
         let dout = self.affine.backward(dscore);
         let dout = self.lstm.conv_2d_3d(dout);
         let dout = self.lstm.backward(dout);
-        let dh = dout.index_axis(Axis(1), 0).to_owned();
-        let embed = self.embed.backward(dout);
-        dh
+        // let dh = dout.index_axis(Axis(1), 0).to_owned();
+        self.embed.backward(dout);
+        self.lstm.dh.clone()
     }
     fn generate(&mut self, h: Arr2d, start_id: usize, sample_size: usize) -> Vec<usize> {
-        let batch_size = h.dim().0;
-        const TIME_SIZE: usize = 1;
+        let batch_size = h.dim().0; // 基本的にはゼロを想定しているが、別にその必要もないな。(いや、そうなると出力を変える必要が出てきて面倒だ)
+        const TIME_SIZE: usize = 1; // 時間方向には一つづづ進める必要がある。
         let mut word_ids = vec![start_id]; // ここに次の単語を追加していく
-        self.lstm.set_state(h);
+        let mut sample_id = start_id;
+        self.lstm.set_state(Some(h), None);
         for _ in 0..sample_size {
-            let x = Array2::from_elem((batch_size, TIME_SIZE), start_id);
-            let out = remove_axis(self.embed.forward(x));
-            let out = self.lstm.forward_piece(out);
-            let score = self.affine.forward(out);
-            // word_ids.push(argmax(score));
-            word_ids.push(1);
+            let x = Array2::from_elem((batch_size, TIME_SIZE), sample_id);
+            let mut out = remove_axis(self.embed.forward(x));
+            out = self.lstm.forward_piece(out);
+            out = self.affine.forward(out); // (batch, word_num)
+            let x: f32 = 0.0;
+            let max = out.iter().fold(std::f32::NEG_INFINITY, |m, x| m.max(*x));
+            sample_id = out
+                .iter()
+                .position(|x| *x == max)
+                .expect("something is definetly wrong in generate");
+            word_ids.push(sample_id);
         }
+        self.lstm.reset_state(); // 1文作るたびに、reset
         word_ids
     }
 }
@@ -162,9 +184,16 @@ impl<'a> Seq2Seq<'a> {
             loss_layer: Default::default(),
         }
     }
-    fn generate(&mut self, idx: Array2<usize>, start_id: usize, sample_size: usize) -> Vec<usize> {
-        let h = self.encoder.forward(idx);
-        self.decoder.generate(h, start_id, sample_size)
+    /// idx: 入力文(例えば、計算式の左辺)、start_id: 出力の開始記号, sample_size: 出力長
+    pub fn generate(
+        &mut self,
+        idx: Array2<usize>,
+        start_id: usize,
+        sample_size: usize,
+    ) -> Vec<usize> {
+        let h = self.encoder.forward(idx); // まずencoderに入力して、結果を得る
+        let generated = self.decoder.generate(h, start_id, sample_size); // それを元に、出力側の開始記号から初めて出力文作成
+        generated
     }
 }
 
