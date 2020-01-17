@@ -283,7 +283,7 @@ pub struct TimeLSTM<'a> {
     c: Arr2d,       // 同様にcも用いる
     pub dh: Arr2d, // 誤差逆伝播では基本的に勾配を渡すことはない(したがって1回のbackward関数内で保持すれば良い)のだが、encoder-decoderの時は、decoderからencoderに渡す必要がある。
     stateful: bool, // 前回のhを保持するかどうか
-    time_size: usize,
+    pub time_size: usize,
     channel_size: usize,
     hidden_size: usize,
     layers: Vec<LSTM<'a>>,
@@ -341,6 +341,7 @@ impl<'a> TimeLSTM<'a> {
         }
         hs
     }
+    /// xs: (batch=1, time=1, hidden) -> (batch=1, hidden)
     pub fn forward_piece(&mut self, xs: Arr2d) -> Arr2d {
         // time_size = 1で進める
         // 事前にself.hをセットしておく(self.set_state)

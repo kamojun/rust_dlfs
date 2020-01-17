@@ -354,3 +354,33 @@ pub fn test_train_split<T: Zero + Copy, D: RemoveAxis>(
 pub fn rev_string(s: String) -> String {
     s.chars().rev().collect()
 }
+
+pub fn expand<T: Copy + Default, D: Dimension>(
+    arr: Array<T, D>,
+    axis: Axis,
+    num: usize,
+) -> Array<T, D::Larger>
+where
+    D::Larger: RemoveAxis,
+{
+    let mut s = arr.shape().to_vec();
+    let a = axis.0;
+    s.insert(a, num);
+    let mut arr2 = Array::from_elem(s, T::default())
+        .into_dimensionality::<D::Larger>()
+        .unwrap();
+    for mut sub in arr2.axis_iter_mut(axis) {
+        sub.assign(&arr);
+    }
+    arr2
+}
+
+pub fn split_arr<T: Copy + Default, D: Dimension>(
+    arr: Array<T, D>,
+    axis: Axis,
+    left_size: usize,
+) -> (Array<T, D>, Array<T, D>) {
+    let arr1 = arr.slice_axis(axis, Slice::from(..left_size)).to_owned();
+    let arr2 = arr.slice_axis(axis, Slice::from(left_size..)).to_owned();
+    (arr1, arr2)
+}

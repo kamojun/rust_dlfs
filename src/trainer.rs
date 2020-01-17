@@ -11,16 +11,16 @@ use itertools::izip;
 // use ndarray::iter::AxisChunksIter;
 use ndarray::{s, Array, Array1, Array2, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
-pub struct Seq2SeqTrainer<'a> {
-    pub model: Seq2Seq<'a>,
+pub struct Seq2SeqTrainer<'a, E: Encode, D: Decode> {
+    pub model: Seq2Seq<E, D>,
     optimizer: NewAdam,
     params: Vec<&'a Update>,
     ppl_list: Vec<f32>,
     acc_list: Vec<f32>,
     max_iters: usize,
 }
-impl<'a> Seq2SeqTrainer<'a> {
-    pub fn new(model: Seq2Seq<'a>, params: Vec<&'a Update>, optimizer: NewAdam) -> Self {
+impl<'a, E: Encode, D: Decode> Seq2SeqTrainer<'a, E, D> {
+    pub fn new(model: Seq2Seq<E, D>, params: Vec<&'a Update>, optimizer: NewAdam) -> Self {
         Self {
             model,
             params,
@@ -41,18 +41,17 @@ impl<'a> Seq2SeqTrainer<'a> {
         epoch: usize,
         iter: usize,
         start_time: std::time::Instant,
-        ppl: f32,
+        loss: f32,
     ) {
         let elapsed_time = std::time::Instant::now() - start_time;
         println!(
-            "|epoch {}| iter {}/{} | time {}[s] | perplexity {}",
+            "|epoch {}| iter {}/{} | time {}[s] | loss {}",
             epoch,
             iter + 1,
             self.max_iters,
             elapsed_time.as_secs(),
-            ppl
+            loss
         );
-        self.ppl_list.push(ppl);
     }
     pub fn fit(
         &mut self,
@@ -86,8 +85,10 @@ impl<'a> Seq2SeqTrainer<'a> {
                 self.optimizer.clipgrads(&self.params);
                 self.optimizer.update(&self.params);
                 if (iter + 1) % eval_interval == 0 {
-                    let ppl = (eval_loss / eval_interval as f32).exp();
-                    self.print_progress(epoch, iter, start_time, ppl);
+                    // let ppl = (eval_loss / eval_interval as f32).exp();
+                    let loss = (eval_loss / eval_interval as f32);
+                    self.print_progress(epoch, iter, start_time, loss);
+                    self.ppl_list.push(loss);
                     eval_loss = 0.0;
                 }
             }

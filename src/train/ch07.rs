@@ -73,38 +73,41 @@ fn load_additon_text(filename: &str) -> (Seq, Seq, Vec<char>, HashMap<char, usiz
     let t = Array2::from_shape_fn((raw.len(), tlen), |(i, j)| char_to_id[&raw[i][xlen + j]]);
     (x, t, charvec, char_to_id)
 }
-fn eval_seq2seq(
-    model: &mut Seq2Seq,
-    question: Seq,
-    answer: Seq,
-    chars: Vec<usize>,
-    verbose: bool,
-    is_reverse: bool,
-) {
-}
 fn train_seq2seq() {
     const WORDVEC_SIZE: usize = 16;
     const HIDDEN_SIZE: usize = 128;
     const BATCH_SIZE: usize = 128;
     const MAX_EPOCH: usize = 25;
     const MAX_GRAD: f32 = 5.0;
-    const LR: f32 = 0.1;
+    const LR: f32 = 0.001;
     const REVERSED: bool = true;
-    let (x, t, chars, char_to_id) = load_additon_text("./data/addition.txt");
+    let (mut x, t, chars, char_to_id) = load_additon_text("./data/addition.txt");
     let input_len = x.dim().1;
     if REVERSED {
         // 入力反転
-        let x = Array2::from_shape_fn((x.dim()), |(i, j)| x[[i, input_len - j - 1]]);
+        x = Array2::from_shape_fn((x.dim()), |(i, j)| x[[i, input_len - j - 1]]);
     }
     putsl!(x.index_axis(Axis(0), 0), t.index_axis(Axis(0), 0), chars);
     let ((x_train, t_train), (x_test, t_test)) = test_train_split(x, t, (9, 1));
     putsl!(x_train.dim(), t_train.dim(), x_test.dim(), t_test.dim());
+    let out = |arr: &Seq, i| {
+        arr.index_axis(Axis(0), i)
+            .iter()
+            .map(|i| chars[*i])
+            .collect::<String>()
+    };
+    println!("{}{}", out(&x_train, 3), out(&t_train, 3));
+    println!("{}{}", out(&x_test, 4), out(&t_test, 4));
     let vocab_size = chars.len();
     let encoder_time_size = input_len; // encoderの入力は計算式の左辺全体
     let decoder_time_size = t_train.dim().1 - 1; // decoderは右辺の入力から、一つずらしたものを出力するので、入力長は一つ短い
     let encoder_params = EncoderParams::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
-    let decoder_params = SimpleRnnlmParams::new_for_Decoder(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
-    let model = Seq2Seq::new(
+    let decoder_params =
+        SimpleRnnlmParams::new_for_PeekyDecoder(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
+    // let decoder_params =
+    // SimpleRnnlmParams::new_for_Decoder(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
+    // let model = Seq2Seq::<Encoder, Decoder>::new(
+    let model = Seq2Seq::<Encoder, PeekyDecoder>::new(
         encoder_time_size,
         decoder_time_size,
         &encoder_params,
@@ -123,7 +126,7 @@ fn train_seq2seq() {
         BATCH_SIZE,
         Some(20),
         Some((x_test, t_test, chars)),
-        false,
+        REVERSED,
     );
     // trainer.eval(&x_test, &t_test, &chars);
     trainer.print_ppl();

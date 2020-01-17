@@ -107,6 +107,27 @@ impl SimpleRnnlmParams {
     pub fn new_for_Decoder(vocab_size: usize, wordvec_size: usize, hidden_size: usize) -> Self {
         Self::new_for_LSTM(vocab_size, wordvec_size, hidden_size)
     }
+    pub fn new_for_PeekyDecoder(
+        vocab_size: usize,
+        wordvec_size: usize,
+        hidden_size: usize,
+    ) -> Self {
+        let embed_w = P1::new(randarr2d(vocab_size, wordvec_size) / 100.0);
+        let mat_init = |m, n| randarr2d(m, n) / (m as f32).sqrt();
+        let rnn_wx = P1::new(mat_init(wordvec_size + hidden_size, 4 * hidden_size)); // rnnへの入力にEncoderからのhを追加
+        let rnn_wh = P1::new(mat_init(hidden_size, 4 * hidden_size));
+        let rnn_b = P1::new(Arr1d::zeros((4 * hidden_size,)));
+        let affine_w = P1::new(mat_init(hidden_size * 2, vocab_size)); // affineへの入力にEncoderからのhを追加
+        let affine_b = P1::new(Arr1d::zeros((vocab_size,)));
+        Self {
+            embed_w,
+            rnn_wx,
+            rnn_wh,
+            rnn_b,
+            affine_w,
+            affine_b,
+        }
+    }
 }
 pub struct SimpleRnnlm<'a> {
     vocab_size: usize,

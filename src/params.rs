@@ -96,8 +96,8 @@ impl<D: Dimension> Update for P1<Array<f32, D>> {
             *v = Array::zeros(g.dim());
             *initialized = true;
         }
-        *m = (&g - &*m) * (1.0 - beta1);
-        *v = (g.mapv(|x| x.powi(2)) - &*v) * (1.0 - beta2); // こっちはgを2乗する
+        *m += &((&g - &*m) * (1.0 - beta1));
+        *v += &((g.mapv(|x| x.powi(2)) - &*v) * (1.0 - beta2)); // こっちはgを2乗する
         *self._p.borrow_mut() -= &(&*m * lr / (v.mapv(f32::sqrt) + 1e-7));
         self.reset_grads();
     }
