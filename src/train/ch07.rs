@@ -5,7 +5,7 @@ use crate::optimizer::{NewAdam, NewSGD};
 use crate::trainer::{RnnlmTrainer, Seq2SeqTrainer};
 use crate::types::*;
 use crate::util::*;
-use ndarray::{array, Array2, Axis};
+use ndarray::{array, Array2, Axis, Ix2};
 use std::collections::HashMap;
 
 fn gen_text() {

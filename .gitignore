@@ -6,3 +6,4 @@ Cargo.lock
 /trained
 
 **/*memo.txt
+**/*.vscode
