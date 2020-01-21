@@ -5,7 +5,7 @@ use crate::optimizer::{NewAdam, NewSGD};
 use crate::trainer::{RnnlmTrainer, Seq2SeqTrainer};
 use crate::types::*;
 use crate::util::*;
-use ndarray::{array, Array2, Axis};
+use ndarray::{array, Array2, Axis, Ix2};
 use std::collections::HashMap;
 
 fn gen_text() {
@@ -107,7 +107,7 @@ fn train_seq2seq() {
     // let decoder_params =
     // SimpleRnnlmParams::new_for_Decoder(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
     // let model = Seq2Seq::<Encoder, Decoder>::new(
-    let model = Seq2Seq::<Encoder, PeekyDecoder>::new(
+    let model = Seq2Seq::<Encoder, PeekyDecoder, Ix2>::new(
         encoder_time_size,
         decoder_time_size,
         &encoder_params,

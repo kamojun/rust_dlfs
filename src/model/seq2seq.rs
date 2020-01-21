@@ -5,17 +5,25 @@ use crate::model::rnn::{Rnnlm, RnnlmGen, RnnlmParams, SavableParams, SimpleRnnlm
 use crate::params::*;
 use crate::types::*;
 use crate::util::{expand, randarr, remove_axis, split_arr};
-use ndarray::{s, stack, Array2, Array3, Axis};
+use ndarray::{s, stack, Array, Array2, Array3, Axis, Dimension, Ix2, Ix3};
 
 pub trait Encode {
-    fn forward(&mut self, idx: Array2<usize>) -> Arr2d;
-    fn backward(&mut self, dh: Arr2d);
+    type Dim: Dimension;
+    /// 出力は(batch, hidden)で、Decoderに渡す
+    fn forward(&mut self, idx: Array2<usize>) -> Array<f32, Self::Dim>;
+    fn backward(&mut self, dh: Array<f32, Self::Dim>);
     fn reset_state(&mut self);
 }
 pub trait Decode {
-    fn forawrd(&mut self, idx: Array2<usize>, h: Arr2d) -> Arr2d;
-    fn backward(&mut self, dscore: Arr2d) -> Arr2d;
-    fn generate(&mut self, h: Arr2d, start_id: usize, sample_size: usize) -> Vec<usize>;
+    type Dim: Dimension;
+    fn forawrd(&mut self, idx: Array2<usize>, h: Array<f32, Self::Dim>) -> Arr2d;
+    fn backward(&mut self, dscore: Arr2d) -> Array<f32, Self::Dim>;
+    fn generate(
+        &mut self,
+        h: Array<f32, Self::Dim>,
+        start_id: usize,
+        sample_size: usize,
+    ) -> Vec<usize>;
     fn reset_state(&mut self);
 }
 pub struct EncoderParams {
@@ -96,6 +104,7 @@ impl<'a> Encoder<'a> {
     }
 }
 impl Encode for Encoder<'_> {
+    type Dim = Ix2;
     fn forward(&mut self, idx: Array2<usize>) -> Arr2d {
         let xs = self.embed.forward(idx);
         let hs = self.lstm.forward(xs);
@@ -142,6 +151,7 @@ impl<'a> Decoder<'a> {
     }
 }
 impl Decode for Decoder<'_> {
+    type Dim = Ix2;
     fn forawrd(&mut self, idx: Array2<usize>, h: Arr2d) -> Arr2d {
         // Encoderから端っこのhを受け取ってset_stateする
         // lstmのstateとしてはcもあるが、これは引き継がない
@@ -211,6 +221,7 @@ impl<'a> PeekyDecoder<'a> {
     }
 }
 impl Decode for PeekyDecoder<'_> {
+    type Dim = Ix2;
     fn forawrd(&mut self, idx: Array2<usize>, h: Arr2d) -> Arr2d {
         // h: (batch, hidden)
         self.lstm.set_state(Some(h.clone()), None); // hの一つ目の入力
@@ -262,7 +273,7 @@ impl Decode for PeekyDecoder<'_> {
         self.lstm.reset_state();
     }
 }
-pub struct Seq2Seq<E: Encode, D: Decode> {
+pub struct Seq2Seq<E: Encode, D: Decode<Dim = E::Dim>> {
     encoder: E,
     decoder: D,
     loss_layer: SoftMaxWithLoss,
@@ -297,13 +308,13 @@ impl<'a> Seq2Seq<Encoder<'a>, PeekyDecoder<'a>> {
     }
 }
 
-impl<E: Encode, D: Decode> Seq2Seq<E, D> {
+impl<E: Encode<Dim = Dim>, D: Decode<Dim = Dim>, Dim: Dimension> Seq2Seq<E, D> {
     pub fn forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32 {
         let decoder_data_length = (t.dim().1 - 1) as i32;
         let decoder_x = t.slice(s![.., ..decoder_data_length]).to_owned();
         let decoder_t = remove_axis(t.slice(s![.., -decoder_data_length..]).to_owned());
-        let h = self.encoder.forward(x);
-        let score = self.decoder.forawrd(decoder_x, h);
+        let h = self.encoder.forward(x); // encoder.forwardを
+        let score = self.decoder.forawrd(decoder_x, h); // decoderに渡す
         self.loss_layer.forward2(score, decoder_t)
     }
     pub fn eval_forward(&mut self, x: Array2<usize>, t: Array2<usize>) -> f32 {

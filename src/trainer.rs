@@ -11,7 +11,7 @@ use itertools::izip;
 // use ndarray::iter::AxisChunksIter;
 use ndarray::{s, Array, Array1, Array2, Axis, Dim, Dimension, Ix2, RemoveAxis, Slice};
 
-pub struct Seq2SeqTrainer<'a, E: Encode, D: Decode> {
+pub struct Seq2SeqTrainer<'a, E: Encode, D: Decode<Dim = E::Dim>> {
     pub model: Seq2Seq<E, D>,
     optimizer: NewAdam,
     params: Vec<&'a Update>,
@@ -19,7 +19,7 @@ pub struct Seq2SeqTrainer<'a, E: Encode, D: Decode> {
     acc_list: Vec<f32>,
     max_iters: usize,
 }
-impl<'a, E: Encode, D: Decode> Seq2SeqTrainer<'a, E, D> {
+impl<'a, E: Encode, D: Decode<Dim = E::Dim>> Seq2SeqTrainer<'a, E, D> {
     pub fn new(model: Seq2Seq<E, D>, params: Vec<&'a Update>, optimizer: NewAdam) -> Self {
         Self {
             model,
