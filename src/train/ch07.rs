@@ -107,7 +107,7 @@ fn train_seq2seq() {
     // let decoder_params =
     // SimpleRnnlmParams::new_for_Decoder(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
     // let model = Seq2Seq::<Encoder, Decoder>::new(
-    let model = Seq2Seq::<Encoder, PeekyDecoder>::new(
+    let model = Seq2Seq::<Encoder, PeekyDecoder, Ix2>::new(
         encoder_time_size,
         decoder_time_size,
         &encoder_params,
