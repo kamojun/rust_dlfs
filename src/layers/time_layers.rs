@@ -279,8 +279,9 @@ impl<'a> LSTM<'a> {
 }
 
 pub struct TimeLSTM<'a> {
-    h: Arr2d,       // 順伝播の時は、前回のhを用いる
-    c: Arr2d,       // 同様にcも用いる
+    h: Arr2d, // 順伝播の時は、前回のhを用いる
+    c: Arr2d, // 同様にcも用いる
+    /// dxとは別で、内部LSTMの相互入出力によるもの!
     pub dh: Arr2d, // 誤差逆伝播では基本的に勾配を渡すことはない(したがって1回のbackward関数内で保持すれば良い)のだが、encoder-decoderの時は、decoderからencoderに渡す必要がある。
     stateful: bool, // 前回のhを保持するかどうか
     pub time_size: usize,
@@ -387,9 +388,11 @@ impl<'a> TimeLSTM<'a> {
         self.dh = dh;
         dxs
     }
+    /// (batch*time, hidden) -> (batch, time, hidden)
     pub fn conv_2d_3d(&self, x: Arr2d) -> Arr3d {
-        let batch_size = x.len() / (self.time_size * self.hidden_size);
-        x.into_shape((batch_size, self.time_size, self.hidden_size))
+        let (batch_time, hidden_size) = x.dim();
+        let batch_size = batch_time / self.time_size;
+        x.into_shape((batch_size, self.time_size, hidden_size))
             .unwrap()
     }
     pub fn reset_state(&mut self) {
@@ -399,5 +402,18 @@ impl<'a> TimeLSTM<'a> {
     pub fn set_state(&mut self, h: Option<Arr2d>, c: Option<Arr2d>) {
         self.h = h.unwrap_or_default();
         self.c = c.unwrap_or_default();
+    }
+}
+
+pub struct TimeAttention<'a> {
+    x: &'a i32,
+}
+impl TimeAttention<'_> {
+    pub fn forward(&mut self, enc_hs: Arr3d, dec_hs: Arr3d) -> Arr3d {
+        unimplemented!();
+    }
+    /// dhs -> denc_hs, ddec_hs
+    pub fn backward(&mut self, dhs: Arr3d) -> (Arr3d, Arr3d) {
+        unimplemented!();
     }
 }

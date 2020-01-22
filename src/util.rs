@@ -334,6 +334,13 @@ pub fn remove_axis<T, D: RemoveAxis>(a: Array<T, D>) -> Array<T, D::Smaller> {
     d[0] *= f;
     a.into_shape(d).unwrap().into_dimensionality().unwrap()
 }
+pub fn insert_axis<T, D: Dimension>(a: Array<T, D>, axis: Axis) -> Array<T, D::Larger> {
+    let mut d = a.shape().to_vec();
+    d.insert(axis.0, 1);
+    // a.into_shape(d)
+    // Default::default()
+    unimplemented!();
+}
 
 pub fn test_train_split<T: Zero + Copy, D: RemoveAxis>(
     x: Array<T, D>,

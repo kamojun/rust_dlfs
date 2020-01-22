@@ -16,6 +16,7 @@ mod tests {
 #[macro_use]
 pub mod macros;
 
+pub mod array_util;
 pub mod functions;
 pub mod io;
 pub mod layers;

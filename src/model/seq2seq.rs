@@ -1,3 +1,4 @@
+use crate::array_util::ReshapeUtil;
 use crate::io::*;
 use crate::layers::loss_layer::*;
 use crate::layers::time_layers::*;
@@ -339,4 +340,81 @@ impl<E: Encode<Dim = Dim>, D: Decode<Dim = Dim>, Dim: Dimension> Seq2Seq<E, D> {
         let generated = self.decoder.generate(h, start_id, sample_size); // それを元に、出力側の開始記号から初めて出力文作成
         generated
     }
+}
+
+pub struct AttentionEncoder<'a> {
+    embed: TimeEmbedding<'a>,
+    lstm: TimeLSTM<'a>,
+    hs_dim: (usize, usize, usize),
+}
+impl<'a> AttentionEncoder<'a> {
+    pub fn new(time_size: usize, params: &'a EncoderParams) -> Self {
+        let embed = TimeEmbedding::new(&params.embed_w);
+        // stateful=falseというのは、毎回のtime方向が独立しているということ
+        let lstm = TimeLSTM::new(
+            &params.rnn_wx,
+            &params.rnn_wh,
+            &params.rnn_b,
+            time_size,
+            false,
+        );
+        Self {
+            embed,
+            lstm,
+            hs_dim: Default::default(),
+        }
+    }
+}
+impl Encode for AttentionEncoder<'_> {
+    type Dim = Ix3;
+    fn forward(&mut self, idx: Array2<usize>) -> Arr3d {
+        let xs = self.embed.forward(idx);
+        let hs = self.lstm.forward(xs);
+        self.hs_dim = hs.dim();
+        // 全ての層の出力を渡す。
+        hs
+    }
+    fn backward(&mut self, dhs: Arr3d) {
+        let dout = self.lstm.backward(dhs);
+        self.embed.backward(dout);
+    }
+    fn reset_state(&mut self) {
+        self.lstm.reset_state();
+    }
+}
+
+pub struct AttentionDecoder<'a> {
+    embed: TimeEmbedding<'a>,
+    lstm: TimeLSTM<'a>,
+    attention: TimeAttention<'a>,
+    affine: TimeAffine<'a>,
+}
+impl Decode for AttentionDecoder<'_> {
+    type Dim = Ix3;
+    fn forawrd(&mut self, idx: Array2<usize>, enc_hs: Arr3d) -> Arr2d {
+        let x = self.embed.forward(idx);
+        let dec_hs = self.lstm.forward(x);
+        let c = self.attention.forward(enc_hs, dec_hs.clone());
+        let out = remove_axis(stack![Axis(2), c, dec_hs]); // (batch*time, hidden)
+        self.affine.forward(out)
+    }
+    fn backward(&mut self, dscore: Arr2d) -> Arr3d {
+        let dout = self.affine.backward(dscore);
+        let seqlen = dout.dim().1;
+        // (batch*time, seqlen) -> (batch, time, seqlen)
+        let dout = dout.reshape2(&[-1, self.lstm.time_size as i32, seqlen as i32]);
+        // 二つに分離
+        let (dc, ddec_hs0) = split_arr(dout, Axis(2), seqlen / 2);
+        // エンコーダとデコーダへの戻り値
+        let (mut denc_hs, ddec_hs1) = self.attention.backward(dc);
+        let dout = self.lstm.backward(ddec_hs0 + ddec_hs1);
+        let mut _d = denc_hs.index_axis_mut(Axis(2), denc_hs.dim().2 - 1);
+        _d += &self.lstm.dh; // lstmのdhの最後の行
+        self.embed.backward(dout);
+        denc_hs
+    }
+    fn generate(&mut self, h: Arr3d, start_id: usize, sample_size: usize) -> Vec<usize> {
+        Default::default()
+    }
+    fn reset_state(&mut self) {}
 }
