@@ -4,7 +4,7 @@ use crate::math::Derivative;
 use crate::params::*;
 use crate::types::*;
 use itertools::izip;
-use ndarray::{Array1, Axis, Dimension, RemoveAxis};
+use ndarray::{s, Array1, Axis, Dimension, Ix2, Ix3, RemoveAxis};
 
 #[derive(Default)]
 struct Cache {
@@ -405,15 +405,64 @@ impl<'a> TimeLSTM<'a> {
     }
 }
 
-pub struct TimeAttention<'a> {
-    x: &'a i32,
+#[derive(Default)]
+/// パラメタ持たない。
+pub struct TimeAttention {
+    softmax: SoftMaxD<Ix3>,
+    softmax2: SoftMaxD<Ix2>,
+    dec_hs: Arr3d,
+    enc_hs: Arr3d,
+    attention: Arr3d,
 }
-impl TimeAttention<'_> {
+impl TimeAttention {
     pub fn forward(&mut self, enc_hs: Arr3d, dec_hs: Arr3d) -> Arr3d {
-        unimplemented!();
+        self.dec_hs = dec_hs.clone();
+        self.enc_hs = enc_hs.clone();
+        let (batch_size, enc_t, hidden_size) = enc_hs.dim();
+        let dec_t = dec_hs.dim().1;
+        // (batch, dect, hidden) @ (batch, enct, hidden) -> (batch, dect, enct)
+        let mut out = Arr3d::from_shape_fn((batch_size, dec_t, enc_t), |(b, d, e)| {
+            dec_hs.slice(s![b, d, ..]).dot(&enc_hs.slice(s![b, e, ..]))
+        });
+        // いわゆるAttention (SoftMaxに入れることで0~1に正規化される。)
+        out = self.softmax.forward(out);
+
+        // (batch, dect, enct) @ (batch, enct, hidden) -> (batch, dect, hidden)
+        // enc_hsをattentionで重み付けする。
+        Arr3d::from_shape_fn((batch_size, dec_t, hidden_size), |(b, d, h)| {
+            out.slice(s![b, d, ..]).dot(&enc_hs.slice(s![b, .., h]))
+        })
+    }
+    pub fn forward_piece(&mut self, enc_hs: Arr3d, dec_h: Arr2d) -> Arr2d {
+        let (batch_size, enc_t, hidden_size) = enc_hs.dim();
+        // const dec_t = 1
+        // (batch, hidden) @ (batch, enct, hidden) -> (batch, enct)
+        let mut out = Arr2d::from_shape_fn((batch_size, enc_t), |(b, e)| {
+            dec_h.slice(s![b, ..]).dot(&enc_hs.slice(s![b, e, ..]))
+        });
+        // いわゆるAttention (SoftMaxに入れることで0~1に正規化される。)
+        out = self.softmax2.forward(out);
+
+        // (batch, enct) @ (batch, enct, hidden) -> (batch, hidden)
+        // enc_hsをattentionで重み付けする。
+        Arr2d::from_shape_fn((batch_size, hidden_size), |(b, h)| {
+            out.slice(s![b, ..]).dot(&enc_hs.slice(s![b, .., h]))
+        })
     }
     /// dhs -> denc_hs, ddec_hs
-    pub fn backward(&mut self, dhs: Arr3d) -> (Arr3d, Arr3d) {
+    pub fn backward(&mut self, mut dhs: Arr3d) -> (Arr3d, Arr3d) {
+        let (batch_size, dec_t, hidden_size) = dhs.dim();
+        let enc_t = self.attention.dim().2;
+        let mut dhs_enc = Arr3d::from_shape_fn((batch_size, enc_t, hidden_size), |(b, e, h)| {
+            dhs.slice(s![b, .., h])
+                .dot(&self.attention.slice(s![b, .., e]))
+        });
+        dhs = Arr3d::from_shape_fn((batch_size, dec_t, enc_t), |(b, d, e)| {
+            dhs.slice(s![b, d, ..])
+                .dot(&self.enc_hs.slice(s![b, e, ..]))
+        });
+        dhs = self.softmax.backward(dhs);
+
         unimplemented!();
     }
 }

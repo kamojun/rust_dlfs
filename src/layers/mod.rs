@@ -3,7 +3,7 @@ use super::functions::*;
 use super::types::{Arr1d, Arr2d, Arr3d};
 use crate::util::*;
 use itertools::izip;
-use ndarray::{Array, Array1, Array2, Array3, Axis, Dimension};
+use ndarray::{Array, Array1, Array2, Array3, Axis, Dimension, RemoveAxis};
 pub mod loss_layer;
 pub mod negativ_sampling_layer;
 pub mod time_layers;
@@ -295,5 +295,30 @@ impl<D: Dimension> Dropout<D> {
     }
     pub fn backward(&self, dout: Array<f32, D>) -> Array<f32, D> {
         dout * &self.mask
+    }
+}
+
+pub struct SoftMaxD<D: RemoveAxis> {
+    out: Array<f32, D>,
+    ndim: usize,
+}
+impl<D: RemoveAxis> Default for SoftMaxD<D> {
+    fn default() -> Self {
+        Self {
+            out: Default::default(),
+            ndim: D::NDIM.unwrap(),
+        }
+    }
+}
+impl<D: RemoveAxis> SoftMaxD<D> {
+    // IxDynのせいでconstが使えず。
+    // const NDIM: usize = D::NDIM.unwap();
+    fn forward(&mut self, input: Array<f32, D>) -> Array<f32, D> {
+        self.out = softmaxd(input);
+        self.out.clone()
+    }
+    fn backward(&mut self, dout: Array<f32, D>) -> Array<f32, D> {
+        let outdout = &(self.out) * &dout; // 演算の中間に出てくる値
+        outdout.clone() - (&self.out * &(outdout.sum_axis(Axis(self.ndim - 1))))
     }
 }

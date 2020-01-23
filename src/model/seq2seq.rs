@@ -386,13 +386,17 @@ impl Encode for AttentionEncoder<'_> {
 pub struct AttentionDecoder<'a> {
     embed: TimeEmbedding<'a>,
     lstm: TimeLSTM<'a>,
-    attention: TimeAttention<'a>,
+    attention: TimeAttention,
     affine: TimeAffine<'a>,
 }
 impl Decode for AttentionDecoder<'_> {
     type Dim = Ix3;
     fn forawrd(&mut self, idx: Array2<usize>, enc_hs: Arr3d) -> Arr2d {
         let x = self.embed.forward(idx);
+        self.lstm.set_state(
+            Some(enc_hs.index_axis(Axis(1), enc_hs.dim().1 - 1).to_owned()),
+            None,
+        );
         let dec_hs = self.lstm.forward(x);
         let c = self.attention.forward(enc_hs, dec_hs.clone());
         let out = remove_axis(stack![Axis(2), c, dec_hs]); // (batch*time, hidden)

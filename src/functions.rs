@@ -22,6 +22,13 @@ pub fn softmax(input: Arr2d) -> Arr2d {
     let sum = input.sum_axis(Axis(1));
     input / sum.insert_axis(Axis(1))
 }
+pub fn softmaxd<D: RemoveAxis>(input: Array<f32, D>) -> Array<f32, D> {
+    // input - input.max(Axis(1))
+    let ndim = input.ndim();
+    let input = input.mapv(|x| x.exp());
+    let sum = input.sum_axis(Axis(ndim - 1));
+    input / sum.insert_axis(Axis(ndim - 1))
+}
 
 pub fn cross_entropy_error_target(pred: &Arr2d, target: &Array1<usize>) -> f32 {
     let mut entropy = Array::zeros(target.len());
