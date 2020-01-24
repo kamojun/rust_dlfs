@@ -393,10 +393,8 @@ impl Decode for AttentionDecoder<'_> {
     type Dim = Ix3;
     fn forawrd(&mut self, idx: Array2<usize>, enc_hs: Arr3d) -> Arr2d {
         let x = self.embed.forward(idx);
-        self.lstm.set_state(
-            Some(enc_hs.index_axis(Axis(1), enc_hs.dim().1 - 1).to_owned()),
-            None,
-        );
+        self.lstm
+            .set_state(Some(enc_hs.slice(s![.., .., -1]).to_owned()), None);
         let dec_hs = self.lstm.forward(x);
         let c = self.attention.forward(enc_hs, dec_hs.clone());
         let out = remove_axis(stack![Axis(2), c, dec_hs]); // (batch*time, hidden)
@@ -417,8 +415,31 @@ impl Decode for AttentionDecoder<'_> {
         self.embed.backward(dout);
         denc_hs
     }
-    fn generate(&mut self, h: Arr3d, start_id: usize, sample_size: usize) -> Vec<usize> {
-        Default::default()
+    fn generate(&mut self, enc_hs: Arr3d, start_id: usize, sample_size: usize) -> Vec<usize> {
+        let batch_size = enc_hs.dim().0; // 基本的にはゼロを想定しているが、別にその必要もないな。(いや、そうなると出力を変える必要が出てきて面倒だ)
+        const TIME_SIZE: usize = 1; // 時間方向には一つづづ進める必要がある。
+        let mut word_ids = vec![start_id]; // ここに次の単語を追加していく
+        let mut sample_id = start_id;
+        self.lstm
+            .set_state(Some(enc_hs.slice(s![.., .., -1]).to_owned()), None);
+        for _ in 0..sample_size {
+            let x = Array2::from_elem((batch_size, TIME_SIZE), sample_id);
+            let mut out = remove_axis(self.embed.forward(x));
+            out = self.lstm.forward_piece(out);
+            out = self.attention.forward_piece(enc_hs.clone(), out);
+            out = self.affine.forward(out); // (batch, word_num)
+            let x: f32 = 0.0;
+            let max = out.iter().fold(std::f32::NEG_INFINITY, |m, x| m.max(*x));
+            sample_id = out
+                .iter()
+                .position(|x| *x == max)
+                .expect("something is definetly wrong in generate");
+            word_ids.push(sample_id);
+        }
+        self.reset_state(); // 1文作るたびに、reset
+        word_ids
     }
-    fn reset_state(&mut self) {}
+    fn reset_state(&mut self) {
+        self.lstm.reset_state();
+    }
 }

@@ -61,5 +61,12 @@ impl<T, D: Dimension> ReshapeUtil<T> for Array<T, D> {
 #[test]
 fn reshape_test() {
     let arr = Array::from_shape_fn((2, 3, 4), |(i, j, k)| 12 * i + 4 * j + k);
-    putsl!(arr, arr.reshape2::<Ix3>(&[4, 3, 2]));
+    putsl!(arr, arr.reshape2::<Ix3>(&[4, 1, -1]));
+}
+#[test]
+fn merge_axis_test() {
+    let mut arr = Array::from_shape_fn((3, 1, 4), |(i, j, k)| 12 * i + 4 * j + k);
+    let merged = arr.merge_axes(Axis(0), Axis(2));
+    putsl!(merged, arr);
+    putsl!(arr.index_axis_move(Axis(0), 0));
 }

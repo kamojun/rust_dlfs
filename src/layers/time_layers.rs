@@ -410,28 +410,24 @@ impl<'a> TimeLSTM<'a> {
 pub struct TimeAttention {
     softmax: SoftMaxD<Ix3>,
     softmax2: SoftMaxD<Ix2>,
+    /// swapaxis: (false, false)と、swapaxis: (false, true)
+    matmul: [MatMul3D; 2],
     dec_hs: Arr3d,
     enc_hs: Arr3d,
     attention: Arr3d,
 }
 impl TimeAttention {
+    /// 入力 : (batch, enct, hidden), (batch, dect, hidden)
     pub fn forward(&mut self, enc_hs: Arr3d, dec_hs: Arr3d) -> Arr3d {
         self.dec_hs = dec_hs.clone();
         self.enc_hs = enc_hs.clone();
-        let (batch_size, enc_t, hidden_size) = enc_hs.dim();
-        let dec_t = dec_hs.dim().1;
-        // (batch, dect, hidden) @ (batch, enct, hidden) -> (batch, dect, enct)
-        let mut out = Arr3d::from_shape_fn((batch_size, dec_t, enc_t), |(b, d, e)| {
-            dec_hs.slice(s![b, d, ..]).dot(&enc_hs.slice(s![b, e, ..]))
-        });
+        // (batch, dect, hidden)@(batch, enct, hidden) -> (batch, dect, enct)
+        // dec_hsはここで消費される。つまり、dec_hsはattentionを作ることにしか使われないのだが、そんなもんかな
+        let mut attention = self.matmul[0].forward((dec_hs, enc_hs.clone()));
         // いわゆるAttention (SoftMaxに入れることで0~1に正規化される。)
-        out = self.softmax.forward(out);
-
-        // (batch, dect, enct) @ (batch, enct, hidden) -> (batch, dect, hidden)
-        // enc_hsをattentionで重み付けする。
-        Arr3d::from_shape_fn((batch_size, dec_t, hidden_size), |(b, d, h)| {
-            out.slice(s![b, d, ..]).dot(&enc_hs.slice(s![b, .., h]))
-        })
+        attention = self.softmax.forward(attention);
+        // (batch, dect, enct)@(batch, enct, hidden; swap) -> (batch, dect, hidden)
+        self.matmul[1].forward((attention, enc_hs))
     }
     pub fn forward_piece(&mut self, enc_hs: Arr3d, dec_h: Arr2d) -> Arr2d {
         let (batch_size, enc_t, hidden_size) = enc_hs.dim();
@@ -449,20 +445,11 @@ impl TimeAttention {
             out.slice(s![b, ..]).dot(&enc_hs.slice(s![b, .., h]))
         })
     }
-    /// dhs -> denc_hs, ddec_hs
+    /// dhs -> denc_hs, dout
     pub fn backward(&mut self, mut dhs: Arr3d) -> (Arr3d, Arr3d) {
-        let (batch_size, dec_t, hidden_size) = dhs.dim();
-        let enc_t = self.attention.dim().2;
-        let mut dhs_enc = Arr3d::from_shape_fn((batch_size, enc_t, hidden_size), |(b, e, h)| {
-            dhs.slice(s![b, .., h])
-                .dot(&self.attention.slice(s![b, .., e]))
-        });
-        dhs = Arr3d::from_shape_fn((batch_size, dec_t, enc_t), |(b, d, e)| {
-            dhs.slice(s![b, d, ..])
-                .dot(&self.enc_hs.slice(s![b, e, ..]))
-        });
-        dhs = self.softmax.backward(dhs);
-
-        unimplemented!();
+        let (dattention, dhs_enc1) = self.matmul[1].backward(dhs);
+        let dhs_dec = self.softmax.backward(dattention);
+        let (dout, dhs_enc2) = self.matmul[0].backward(dhs_dec);
+        (dhs_enc1 + dhs_enc2, dout)
     }
 }

@@ -328,11 +328,17 @@ pub fn replace_item<T: Eq + Clone>(mut v: Vec<T>, prev: T, new: T) -> Vec<T> {
 }
 
 /// 先頭の軸を落とす
-pub fn remove_axis<T, D: RemoveAxis>(a: Array<T, D>) -> Array<T, D::Smaller> {
-    let mut d = a.shape().to_vec();
-    let f = d.remove(1);
-    d[0] *= f;
-    a.into_shape(d).unwrap().into_dimensionality().unwrap()
+pub fn remove_axis<T, D: RemoveAxis>(mut a: Array<T, D>) -> Array<T, D::Smaller> {
+    // let mut d = a.shape().to_vec();
+    // let f = d.remove(1);
+    // d[0] *= f;
+    // a.into_shape(d).unwrap().into_dimensionality().unwrap()
+    // merge_axesは、データの並び順を変えない場合に限って実行できる。
+    // 隣り合ったaxis同士なら可能で、外側の長さが1になる。
+    // 隣接していない場合は，間の軸がすべて長さ1の場合のみ実行可能。
+    // a.dim() = (3, 1, 1, 1, 5) -> Axis(0)からAxis(4)でok
+    assert!(a.merge_axes(Axis(0), Axis(1)), "this must never happen!");
+    a.index_axis_move(Axis(0), 0)
 }
 pub fn insert_axis<T, D: Dimension>(a: Array<T, D>, axis: Axis) -> Array<T, D::Larger> {
     let mut d = a.shape().to_vec();
