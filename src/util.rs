@@ -340,13 +340,6 @@ pub fn remove_axis<T, D: RemoveAxis>(mut a: Array<T, D>) -> Array<T, D::Smaller>
     assert!(a.merge_axes(Axis(0), Axis(1)), "this must never happen!");
     a.index_axis_move(Axis(0), 0)
 }
-pub fn insert_axis<T, D: Dimension>(a: Array<T, D>, axis: Axis) -> Array<T, D::Larger> {
-    let mut d = a.shape().to_vec();
-    d.insert(axis.0, 1);
-    // a.into_shape(d)
-    // Default::default()
-    unimplemented!();
-}
 
 pub fn test_train_split<T: Zero + Copy, D: RemoveAxis>(
     x: Array<T, D>,

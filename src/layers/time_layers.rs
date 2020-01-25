@@ -417,6 +417,12 @@ pub struct TimeAttention {
     attention: Arr3d,
 }
 impl TimeAttention {
+    pub fn new() -> Self {
+        Self {
+            matmul: [Default::default(), MatMul3D::new(false, true)],
+            ..Default::default()
+        }
+    }
     /// 入力 : (batch, enct, hidden), (batch, dect, hidden)
     pub fn forward(&mut self, enc_hs: Arr3d, dec_hs: Arr3d) -> Arr3d {
         self.dec_hs = dec_hs.clone();

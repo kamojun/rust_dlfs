@@ -1,5 +1,5 @@
 use ndarray::{
-    Array, Array1, Array2, Array3, ArrayView1, Axis, Dimension, Ix2, Ix3, RemoveAxis, Slice,
+    s, Array, Array1, Array2, Array3, ArrayView1, Axis, Dimension, Ix2, Ix3, RemoveAxis, Slice,
 };
 
 pub trait AxisUtil {
@@ -58,15 +58,19 @@ impl<T, D: Dimension> ReshapeUtil<T> for Array<T, D> {
             .unwrap()
     }
 }
-#[test]
 fn reshape_test() {
     let arr = Array::from_shape_fn((2, 3, 4), |(i, j, k)| 12 * i + 4 * j + k);
     putsl!(arr, arr.reshape2::<Ix3>(&[4, 1, -1]));
 }
-#[test]
 fn merge_axis_test() {
     let mut arr = Array::from_shape_fn((3, 1, 4), |(i, j, k)| 12 * i + 4 * j + k);
     let merged = arr.merge_axes(Axis(0), Axis(2));
     putsl!(merged, arr);
     putsl!(arr.index_axis_move(Axis(0), 0));
+}
+#[test]
+fn slice_test() {
+    let mut arr = Array::from_shape_fn((3, 1, 4), |(i, j, k)| 12 * i + 4 * j + k);
+    putsl!(arr);
+    putsl!(arr.slice_move(s![..,..,..;-1]));
 }

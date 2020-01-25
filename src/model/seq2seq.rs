@@ -389,6 +389,28 @@ pub struct AttentionDecoder<'a> {
     attention: TimeAttention,
     affine: TimeAffine<'a>,
 }
+impl<'a> AttentionDecoder<'a> {
+    fn new(time_size: usize, params: &'a SimpleRnnlmParams) -> Self {
+        let embed = TimeEmbedding::new(&params.embed_w);
+        // stateful=trueなのは、Encoderからhを受け取るから。
+        // forward実装をみよ。
+        let lstm = TimeLSTM::new(
+            &params.rnn_wx,
+            &params.rnn_wh,
+            &params.rnn_b,
+            time_size,
+            true,
+        );
+        let attention = TimeAttention::new();
+        let affine = TimeAffine::new(&params.affine_w, &params.affine_b);
+        Self {
+            embed,
+            lstm,
+            attention,
+            affine,
+        }
+    }
+}
 impl Decode for AttentionDecoder<'_> {
     type Dim = Ix3;
     fn forawrd(&mut self, idx: Array2<usize>, enc_hs: Arr3d) -> Arr2d {
@@ -397,7 +419,7 @@ impl Decode for AttentionDecoder<'_> {
             .set_state(Some(enc_hs.slice(s![.., .., -1]).to_owned()), None);
         let dec_hs = self.lstm.forward(x);
         let c = self.attention.forward(enc_hs, dec_hs.clone());
-        let out = remove_axis(stack![Axis(2), c, dec_hs]); // (batch*time, hidden)
+        let out = remove_axis(stack![Axis(2), c, dec_hs]); // (batch*time, hidden*2)
         self.affine.forward(out)
     }
     fn backward(&mut self, dscore: Arr2d) -> Arr3d {
@@ -441,5 +463,20 @@ impl Decode for AttentionDecoder<'_> {
     }
     fn reset_state(&mut self) {
         self.lstm.reset_state();
+    }
+}
+
+impl<'a> Seq2Seq<AttentionEncoder<'a>, AttentionDecoder<'a>> {
+    pub fn new(
+        encoder_time_size: usize,
+        decoder_time_size: usize,
+        encoder_params: &'a EncoderParams,
+        decoder_params: &'a SimpleRnnlmParams,
+    ) -> Self {
+        Self {
+            encoder: AttentionEncoder::new(encoder_time_size, encoder_params),
+            decoder: AttentionDecoder::new(decoder_time_size, decoder_params),
+            loss_layer: Default::default(),
+        }
     }
 }
