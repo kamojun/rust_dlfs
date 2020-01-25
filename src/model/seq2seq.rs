@@ -416,7 +416,7 @@ impl Decode for AttentionDecoder<'_> {
     fn forawrd(&mut self, idx: Array2<usize>, enc_hs: Arr3d) -> Arr2d {
         let x = self.embed.forward(idx);
         self.lstm
-            .set_state(Some(enc_hs.slice(s![.., .., -1]).to_owned()), None);
+            .set_state(Some(enc_hs.slice(s![.., -1, ..]).to_owned()), None);
         let dec_hs = self.lstm.forward(x);
         let c = self.attention.forward(enc_hs, dec_hs.clone());
         let out = remove_axis(stack![Axis(2), c, dec_hs]); // (batch*time, hidden*2)
@@ -424,17 +424,20 @@ impl Decode for AttentionDecoder<'_> {
     }
     fn backward(&mut self, dscore: Arr2d) -> Arr3d {
         let dout = self.affine.backward(dscore);
-        let seqlen = dout.dim().1;
-        // (batch*time, seqlen) -> (batch, time, seqlen)
-        let dout = dout.reshape2(&[-1, self.lstm.time_size as i32, seqlen as i32]);
+        let hidden_size2 = dout.dim().1;
+        // (batch*time, hidden*2) -> (batch, time, hidden*2)
+        let dout = dout.reshape2(&[-1, self.lstm.time_size as i32, hidden_size2 as i32]);
         // 二つに分離
-        let (dc, ddec_hs0) = split_arr(dout, Axis(2), seqlen / 2);
+        let (dc, ddec_hs0) = split_arr(dout, Axis(2), hidden_size2 / 2);
         // エンコーダとデコーダへの戻り値
         let (mut denc_hs, ddec_hs1) = self.attention.backward(dc);
         let dout = self.lstm.backward(ddec_hs0 + ddec_hs1);
-        let mut _d = denc_hs.index_axis_mut(Axis(2), denc_hs.dim().2 - 1);
-        _d += &self.lstm.dh; // lstmのdhの最後の行
         self.embed.backward(dout);
+
+        // ここからエンコーダへ渡る
+        // enc_hsの時間方向に最後のhはlstmにも渡されていたので、そこに加算する
+        let mut _d = denc_hs.slice_mut(s![.., -1, ..]);
+        _d += &self.lstm.dh; // lstmのdhの最後の行
         denc_hs
     }
     fn generate(&mut self, enc_hs: Arr3d, start_id: usize, sample_size: usize) -> Vec<usize> {
@@ -443,13 +446,13 @@ impl Decode for AttentionDecoder<'_> {
         let mut word_ids = vec![start_id]; // ここに次の単語を追加していく
         let mut sample_id = start_id;
         self.lstm
-            .set_state(Some(enc_hs.slice(s![.., .., -1]).to_owned()), None);
+            .set_state(Some(enc_hs.slice(s![.., -1, ..]).to_owned()), None);
         for _ in 0..sample_size {
             let x = Array2::from_elem((batch_size, TIME_SIZE), sample_id);
-            let mut out = remove_axis(self.embed.forward(x));
-            out = self.lstm.forward_piece(out);
-            out = self.attention.forward_piece(enc_hs.clone(), out);
-            out = self.affine.forward(out); // (batch, word_num)
+            let emb = remove_axis(self.embed.forward(x));
+            let dec_h = self.lstm.forward_piece(emb);
+            let mut out = self.attention.forward_piece(enc_hs.clone(), dec_h.clone()); // (1, hidden)
+            out = self.affine.forward(stack![Axis(1), out, dec_h]); // (batch, word_num)
             let x: f32 = 0.0;
             let max = out.iter().fold(std::f32::NEG_INFINITY, |m, x| m.max(*x));
             sample_id = out

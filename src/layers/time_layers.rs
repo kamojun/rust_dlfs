@@ -412,8 +412,6 @@ pub struct TimeAttention {
     softmax2: SoftMaxD<Ix2>,
     /// swapaxis: (false, false)と、swapaxis: (false, true)
     matmul: [MatMul3D; 2],
-    dec_hs: Arr3d,
-    enc_hs: Arr3d,
     attention: Arr3d,
 }
 impl TimeAttention {
@@ -425,8 +423,6 @@ impl TimeAttention {
     }
     /// 入力 : (batch, enct, hidden), (batch, dect, hidden)
     pub fn forward(&mut self, enc_hs: Arr3d, dec_hs: Arr3d) -> Arr3d {
-        self.dec_hs = dec_hs.clone();
-        self.enc_hs = enc_hs.clone();
         // (batch, dect, hidden)@(batch, enct, hidden) -> (batch, dect, enct)
         // dec_hsはここで消費される。つまり、dec_hsはattentionを作ることにしか使われないのだが、そんなもんかな
         let mut attention = self.matmul[0].forward((dec_hs, enc_hs.clone()));
@@ -443,7 +439,7 @@ impl TimeAttention {
             dec_h.slice(s![b, ..]).dot(&enc_hs.slice(s![b, e, ..]))
         });
         // いわゆるAttention (SoftMaxに入れることで0~1に正規化される。)
-        out = self.softmax2.forward(out);
+        out = self.softmax2.forward(out); // ただのsoftmax関数でいいような
 
         // (batch, enct) @ (batch, enct, hidden) -> (batch, hidden)
         // enc_hsをattentionで重み付けする。

@@ -317,9 +317,12 @@ impl<D: RemoveAxis> SoftMaxD<D> {
         self.out = softmaxd(input);
         self.out.clone()
     }
+    /// (batch, time, class_num)や(batch, class_num)を想定している
     fn backward(&mut self, dout: Array<f32, D>) -> Array<f32, D> {
         let outdout = &(self.out) * &dout; // 演算の中間に出てくる値
-        outdout.clone() - (&self.out * &(outdout.sum_axis(Axis(self.ndim - 1))))
+        let lastaxis = Axis(self.ndim - 1);
+        // (b, t, c) - (b, t, c) * (b, t, 1) 的な計算
+        outdout.clone() - (&self.out * &(outdout.sum_axis(lastaxis).insert_axis(lastaxis)))
     }
 }
 /// 1, 2のどの次元を潰すかは、自由に決めれそうな気がするが...
@@ -365,8 +368,6 @@ impl MatMul3D {
     fn forward(&mut self, mut xs: (Arr3d, Arr3d)) -> Arr3d {
         xs = self.swap(xs);
         self.xs = xs.clone();
-        let (batch_size, left, _) = xs.0.dim();
-        let right = xs.1.dim().2;
         dot3d(&xs.0, &xs.1, 2, 2)
     }
     fn backward(&mut self, dout: Arr3d) -> (Arr3d, Arr3d) {

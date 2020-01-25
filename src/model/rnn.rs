@@ -544,7 +544,7 @@ impl RnnlmGen for RnnlmLSTM<'_> {
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::prelude::thread_rng;
 #[test]
-fn hello_rand() {
+fn rand_test() {
     let choices = ['a', 'b', 'c'];
     let weights = [2, 1, 0];
     let dist = WeightedIndex::new(&weights).unwrap();
