@@ -107,7 +107,7 @@ impl<'a, E: Encode, D: Decode<Dim = E::Dim>> Seq2SeqTrainer<'a, E, D> {
             .enumerate()
         {
             let guess = self.model.generate(_x.to_owned(), start_id, sample_size);
-            self.params.iter().inspect(|p| p.reset_grads());
+            self.params.iter().inspect(|p| p.reset_grads()); // generateでもgrads保存してしまう仕様なので、全部消す
             let is_correct = _t.iter().zip(guess.iter()).all(|(a, g)| a == g); // answerとguessを比較
             correct_count += if is_correct { 1.0 } else { 0.0 };
             if i < 10 {

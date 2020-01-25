@@ -4,7 +4,7 @@ use crate::math::Derivative;
 use crate::params::*;
 use crate::types::*;
 use itertools::izip;
-use ndarray::{Array1, Axis, Dimension, RemoveAxis};
+use ndarray::{s, Array1, Axis, Dimension, Ix2, Ix3, RemoveAxis};
 
 #[derive(Default)]
 struct Cache {
@@ -279,8 +279,9 @@ impl<'a> LSTM<'a> {
 }
 
 pub struct TimeLSTM<'a> {
-    h: Arr2d,       // 順伝播の時は、前回のhを用いる
-    c: Arr2d,       // 同様にcも用いる
+    h: Arr2d, // 順伝播の時は、前回のhを用いる
+    c: Arr2d, // 同様にcも用いる
+    /// dxとは別で、内部LSTMの相互入出力によるもの!
     pub dh: Arr2d, // 誤差逆伝播では基本的に勾配を渡すことはない(したがって1回のbackward関数内で保持すれば良い)のだが、encoder-decoderの時は、decoderからencoderに渡す必要がある。
     stateful: bool, // 前回のhを保持するかどうか
     pub time_size: usize,
@@ -387,9 +388,11 @@ impl<'a> TimeLSTM<'a> {
         self.dh = dh;
         dxs
     }
+    /// (batch*time, hidden) -> (batch, time, hidden)
     pub fn conv_2d_3d(&self, x: Arr2d) -> Arr3d {
-        let batch_size = x.len() / (self.time_size * self.hidden_size);
-        x.into_shape((batch_size, self.time_size, self.hidden_size))
+        let (batch_time, hidden_size) = x.dim();
+        let batch_size = batch_time / self.time_size;
+        x.into_shape((batch_size, self.time_size, hidden_size))
             .unwrap()
     }
     pub fn reset_state(&mut self) {
@@ -399,5 +402,56 @@ impl<'a> TimeLSTM<'a> {
     pub fn set_state(&mut self, h: Option<Arr2d>, c: Option<Arr2d>) {
         self.h = h.unwrap_or_default();
         self.c = c.unwrap_or_default();
+    }
+}
+
+#[derive(Default)]
+/// パラメタ持たない。
+pub struct TimeAttention {
+    softmax: SoftMaxD<Ix3>,
+    softmax2: SoftMaxD<Ix2>,
+    /// swapaxis: (false, false)と、swapaxis: (false, true)
+    matmul: [MatMul3D; 2],
+    attention: Arr3d,
+}
+impl TimeAttention {
+    pub fn new() -> Self {
+        Self {
+            matmul: [Default::default(), MatMul3D::new(false, true)],
+            ..Default::default()
+        }
+    }
+    /// 入力 : (batch, enct, hidden), (batch, dect, hidden)
+    pub fn forward(&mut self, enc_hs: Arr3d, dec_hs: Arr3d) -> Arr3d {
+        // (batch, dect, hidden)@(batch, enct, hidden) -> (batch, dect, enct)
+        // dec_hsはここで消費される。つまり、dec_hsはattentionを作ることにしか使われないのだが、そんなもんかな
+        let mut attention = self.matmul[0].forward((dec_hs, enc_hs.clone()));
+        // いわゆるAttention (SoftMaxに入れることで0~1に正規化される。)
+        attention = self.softmax.forward(attention);
+        // (batch, dect, enct)@(batch, enct, hidden; swap) -> (batch, dect, hidden)
+        self.matmul[1].forward((attention, enc_hs))
+    }
+    pub fn forward_piece(&mut self, enc_hs: Arr3d, dec_h: Arr2d) -> Arr2d {
+        let (batch_size, enc_t, hidden_size) = enc_hs.dim();
+        // const dec_t = 1
+        // (batch, hidden) @ (batch, enct, hidden) -> (batch, enct)
+        let mut out = Arr2d::from_shape_fn((batch_size, enc_t), |(b, e)| {
+            dec_h.slice(s![b, ..]).dot(&enc_hs.slice(s![b, e, ..]))
+        });
+        // いわゆるAttention (SoftMaxに入れることで0~1に正規化される。)
+        out = self.softmax2.forward(out); // ただのsoftmax関数でいいような
+
+        // (batch, enct) @ (batch, enct, hidden) -> (batch, hidden)
+        // enc_hsをattentionで重み付けする。
+        Arr2d::from_shape_fn((batch_size, hidden_size), |(b, h)| {
+            out.slice(s![b, ..]).dot(&enc_hs.slice(s![b, .., h]))
+        })
+    }
+    /// dhs -> denc_hs, dout
+    pub fn backward(&mut self, mut dhs: Arr3d) -> (Arr3d, Arr3d) {
+        let (dattention, dhs_enc1) = self.matmul[1].backward(dhs);
+        let dhs_dec = self.softmax.backward(dattention);
+        let (dout, dhs_enc2) = self.matmul[0].backward(dhs_dec);
+        (dhs_enc1 + dhs_enc2, dout)
     }
 }

@@ -1,3 +1,4 @@
+use crate::array_util::ReshapeUtil;
 use crate::io::*;
 use crate::layers::loss_layer::*;
 use crate::layers::time_layers::*;
@@ -338,5 +339,147 @@ impl<E: Encode<Dim = Dim>, D: Decode<Dim = Dim>, Dim: Dimension> Seq2Seq<E, D> {
         let h = self.encoder.forward(idx); // まずencoderに入力して、結果を得る
         let generated = self.decoder.generate(h, start_id, sample_size); // それを元に、出力側の開始記号から初めて出力文作成
         generated
+    }
+}
+
+pub struct AttentionEncoder<'a> {
+    embed: TimeEmbedding<'a>,
+    lstm: TimeLSTM<'a>,
+    hs_dim: (usize, usize, usize),
+}
+impl<'a> AttentionEncoder<'a> {
+    pub fn new(time_size: usize, params: &'a EncoderParams) -> Self {
+        let embed = TimeEmbedding::new(&params.embed_w);
+        // stateful=falseというのは、毎回のtime方向が独立しているということ
+        let lstm = TimeLSTM::new(
+            &params.rnn_wx,
+            &params.rnn_wh,
+            &params.rnn_b,
+            time_size,
+            false,
+        );
+        Self {
+            embed,
+            lstm,
+            hs_dim: Default::default(),
+        }
+    }
+}
+impl Encode for AttentionEncoder<'_> {
+    type Dim = Ix3;
+    fn forward(&mut self, idx: Array2<usize>) -> Arr3d {
+        let xs = self.embed.forward(idx);
+        let hs = self.lstm.forward(xs);
+        self.hs_dim = hs.dim();
+        // 全ての層の出力を渡す。
+        hs
+    }
+    fn backward(&mut self, dhs: Arr3d) {
+        let dout = self.lstm.backward(dhs);
+        self.embed.backward(dout);
+    }
+    fn reset_state(&mut self) {
+        self.lstm.reset_state();
+    }
+}
+
+pub struct AttentionDecoder<'a> {
+    embed: TimeEmbedding<'a>,
+    lstm: TimeLSTM<'a>,
+    attention: TimeAttention,
+    affine: TimeAffine<'a>,
+}
+impl<'a> AttentionDecoder<'a> {
+    fn new(time_size: usize, params: &'a SimpleRnnlmParams) -> Self {
+        let embed = TimeEmbedding::new(&params.embed_w);
+        // stateful=trueなのは、Encoderからhを受け取るから。
+        // forward実装をみよ。
+        let lstm = TimeLSTM::new(
+            &params.rnn_wx,
+            &params.rnn_wh,
+            &params.rnn_b,
+            time_size,
+            true,
+        );
+        let attention = TimeAttention::new();
+        let affine = TimeAffine::new(&params.affine_w, &params.affine_b);
+        Self {
+            embed,
+            lstm,
+            attention,
+            affine,
+        }
+    }
+}
+impl Decode for AttentionDecoder<'_> {
+    type Dim = Ix3;
+    fn forawrd(&mut self, idx: Array2<usize>, enc_hs: Arr3d) -> Arr2d {
+        let x = self.embed.forward(idx);
+        self.lstm
+            .set_state(Some(enc_hs.slice(s![.., -1, ..]).to_owned()), None);
+        let dec_hs = self.lstm.forward(x);
+        let c = self.attention.forward(enc_hs, dec_hs.clone());
+        let out = remove_axis(stack![Axis(2), c, dec_hs]); // (batch*time, hidden*2)
+        self.affine.forward(out)
+    }
+    fn backward(&mut self, dscore: Arr2d) -> Arr3d {
+        let dout = self.affine.backward(dscore);
+        let hidden_size2 = dout.dim().1;
+        // (batch*time, hidden*2) -> (batch, time, hidden*2)
+        let dout = dout.reshape2(&[-1, self.lstm.time_size as i32, hidden_size2 as i32]);
+        // 二つに分離
+        let (dc, ddec_hs0) = split_arr(dout, Axis(2), hidden_size2 / 2);
+        // エンコーダとデコーダへの戻り値
+        let (mut denc_hs, ddec_hs1) = self.attention.backward(dc);
+        let dout = self.lstm.backward(ddec_hs0 + ddec_hs1);
+        self.embed.backward(dout);
+
+        // ここからエンコーダへ渡る
+        // enc_hsの時間方向に最後のhはlstmにも渡されていたので、そこに加算する
+        let mut _d = denc_hs.slice_mut(s![.., -1, ..]);
+        _d += &self.lstm.dh; // lstmのdhの最後の行
+        denc_hs
+    }
+    fn generate(&mut self, enc_hs: Arr3d, start_id: usize, sample_size: usize) -> Vec<usize> {
+        let batch_size = enc_hs.dim().0; // 基本的にはゼロを想定しているが、別にその必要もないな。(いや、そうなると出力を変える必要が出てきて面倒だ)
+        const TIME_SIZE: usize = 1; // 時間方向には一つづづ進める必要がある。
+        let mut word_ids = vec![start_id]; // ここに次の単語を追加していく
+        let mut sample_id = start_id;
+        self.lstm
+            .set_state(Some(enc_hs.slice(s![.., -1, ..]).to_owned()), None);
+        for _ in 0..sample_size {
+            let x = Array2::from_elem((batch_size, TIME_SIZE), sample_id);
+            let emb = remove_axis(self.embed.forward(x));
+            let dec_h = self.lstm.forward_piece(emb);
+            let mut out = self.attention.forward_piece(enc_hs.clone(), dec_h.clone()); // (1, hidden)
+            out = self.affine.forward(stack![Axis(1), out, dec_h]); // (batch, word_num)
+            let x: f32 = 0.0;
+            let max = out.iter().fold(std::f32::NEG_INFINITY, |m, x| m.max(*x));
+            sample_id = out
+                .iter()
+                .position(|x| *x == max)
+                .expect("something is definetly wrong in generate");
+            word_ids.push(sample_id);
+        }
+        self.reset_state(); // 1文作るたびに、reset
+        word_ids
+    }
+    fn reset_state(&mut self) {
+        self.lstm.reset_state();
+    }
+}
+
+impl<'a> Seq2Seq<AttentionEncoder<'a>, AttentionDecoder<'a>> {
+    pub fn new(
+        encoder_time_size: usize,
+        decoder_time_size: usize,
+        encoder_params: &'a EncoderParams,
+        decoder_params: &'a SimpleRnnlmParams,
+    ) -> Self {
+        Self {
+            encoder: AttentionEncoder::new(encoder_time_size, encoder_params),
+            decoder: AttentionDecoder::new(decoder_time_size, decoder_params),
+            loss_layer: Default::default(),
+        }
     }
 }

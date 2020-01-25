@@ -3,7 +3,7 @@ use super::functions::*;
 use super::types::{Arr1d, Arr2d, Arr3d};
 use crate::util::*;
 use itertools::izip;
-use ndarray::{Array, Array1, Array2, Array3, Axis, Dimension};
+use ndarray::{s, Array, Array1, Array2, Array3, Axis, Dimension, RemoveAxis};
 pub mod loss_layer;
 pub mod negativ_sampling_layer;
 pub mod time_layers;
@@ -295,5 +295,84 @@ impl<D: Dimension> Dropout<D> {
     }
     pub fn backward(&self, dout: Array<f32, D>) -> Array<f32, D> {
         dout * &self.mask
+    }
+}
+
+pub struct SoftMaxD<D: RemoveAxis> {
+    out: Array<f32, D>,
+    ndim: usize,
+}
+impl<D: RemoveAxis> Default for SoftMaxD<D> {
+    fn default() -> Self {
+        Self {
+            out: Default::default(),
+            ndim: D::NDIM.unwrap(),
+        }
+    }
+}
+impl<D: RemoveAxis> SoftMaxD<D> {
+    // IxDynのせいでconstが使えず。
+    // const NDIM: usize = D::NDIM.unwap();
+    fn forward(&mut self, input: Array<f32, D>) -> Array<f32, D> {
+        self.out = softmaxd(input);
+        self.out.clone()
+    }
+    /// (batch, time, class_num)や(batch, class_num)を想定している
+    fn backward(&mut self, dout: Array<f32, D>) -> Array<f32, D> {
+        let outdout = &(self.out) * &dout; // 演算の中間に出てくる値
+        let lastaxis = Axis(self.ndim - 1);
+        // (b, t, c) - (b, t, c) * (b, t, 1) 的な計算
+        outdout.clone() - (&self.out * &(outdout.sum_axis(lastaxis).insert_axis(lastaxis)))
+    }
+}
+/// 1, 2のどの次元を潰すかは、自由に決めれそうな気がするが...
+/// viewという便利なものを使って実現
+fn dot3d(x: &Arr3d, y: &Arr3d, xaxis: usize, yaxis: usize) -> Arr3d {
+    let mut x = x.view();
+    let mut y = y.view();
+    if xaxis == 1 {
+        x.swap_axes(1, 2);
+    }
+    if yaxis == 1 {
+        y.swap_axes(1, 2);
+    }
+    let (b, left, h) = x.dim();
+    let (b_, right, h_) = y.dim();
+    assert_eq!((b, h), (b_, h_), "batch and hidden size must coincide!");
+    Arr3d::from_shape_fn((b, left, right), |(b, l, r)| {
+        x.slice(s![b, l, ..]).dot(&y.slice(s![b, r, ..]))
+    })
+}
+#[derive(Default)]
+pub struct MatMul3D {
+    xs: (Arr3d, Arr3d),
+    swap_axes: (bool, bool), // 入力時にaxis1, axis2を入れ替えるか否か
+}
+impl MatMul3D {
+    pub fn new(swap_left: bool, swap_right: bool) -> Self {
+        let swap_axes = (swap_left, swap_right);
+        Self {
+            swap_axes,
+            ..Self::default()
+        }
+    }
+    fn swap(&self, mut xs: (Arr3d, Arr3d)) -> (Arr3d, Arr3d) {
+        if self.swap_axes.0 {
+            xs.0.swap_axes(1, 2);
+        }
+        if self.swap_axes.1 {
+            xs.1.swap_axes(1, 2);
+        }
+        xs
+    }
+    fn forward(&mut self, mut xs: (Arr3d, Arr3d)) -> Arr3d {
+        xs = self.swap(xs);
+        self.xs = xs.clone();
+        dot3d(&xs.0, &xs.1, 2, 2)
+    }
+    fn backward(&mut self, dout: Arr3d) -> (Arr3d, Arr3d) {
+        let doutl = dot3d(&dout, &self.xs.1, 2, 1);
+        let doutr = dot3d(&dout, &self.xs.0, 1, 1);
+        self.swap((doutl, doutr))
     }
 }

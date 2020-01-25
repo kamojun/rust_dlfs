@@ -183,25 +183,21 @@ where
     Ok(v)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn read_csv_test() {
-        // // let v: Vec<Vec<f32>> = read_csv("./data/spiral/x.csv").unwrap();
-        // // let arr = Array::from_shape_fn((v.len(), 2), |(i, j)| v[i][j]);
-        // let arr = csv_to_array::<f32>("./data/spiral/t.csv").unwrap();
-        // // println!("{:?}", arr);
-        // // let c = read_csv::<(usize, String)>("./data/ptb/id.csv").expect("error!!!");
-        // arr.save_as_csv("hoge.csv");
-        // // putsl!(c);
-        // use ndarray::Array1;
-        // Array1::<f32>::zeros((10,)).save_as_csv("zerozero.csv");
+#[test]
+fn read_csv_test() {
+    // // let v: Vec<Vec<f32>> = read_csv("./data/spiral/x.csv").unwrap();
+    // // let arr = Array::from_shape_fn((v.len(), 2), |(i, j)| v[i][j]);
+    // let arr = csv_to_array::<f32>("./data/spiral/t.csv").unwrap();
+    // // println!("{:?}", arr);
+    // // let c = read_csv::<(usize, String)>("./data/ptb/id.csv").expect("error!!!");
+    // arr.save_as_csv("hoge.csv");
+    // // putsl!(c);
+    // use ndarray::Array1;
+    // Array1::<f32>::zeros((10,)).save_as_csv("zerozero.csv");
 
-        let arr = csv_to_array::<f32>(
-            "/Users/kamohara_jun/Documents/projects/dlfs/rust/data/BetterRnnlm/affine_w.csv",
-        )
-        .unwrap();
-        putsd!(arr[[0, 0]]);
-    }
+    // let arr = csv_to_array::<f32>(
+    //     "/Users/kamohara_jun/Documents/projects/dlfs/rust/data/BetterRnnlm/affine_w.csv",
+    // )
+    // .unwrap();
+    // putsd!(arr[[0, 0]]);
 }

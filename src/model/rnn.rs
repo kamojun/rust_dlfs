@@ -113,11 +113,38 @@ impl SimpleRnnlmParams {
         hidden_size: usize,
     ) -> Self {
         let embed_w = P1::new(randarr2d(vocab_size, wordvec_size) / 100.0);
+        // ランダムベクトル初期化用のクロージャ
         let mat_init = |m, n| randarr2d(m, n) / (m as f32).sqrt();
-        let rnn_wx = P1::new(mat_init(wordvec_size + hidden_size, 4 * hidden_size)); // rnnへの入力にEncoderからのhを追加
+        // rnnへの入力はembedからの(b, wordvec)とEncoderからの(b, hidden)
+        let rnn_wx = P1::new(mat_init(wordvec_size + hidden_size, 4 * hidden_size));
         let rnn_wh = P1::new(mat_init(hidden_size, 4 * hidden_size));
         let rnn_b = P1::new(Arr1d::zeros((4 * hidden_size,)));
-        let affine_w = P1::new(mat_init(hidden_size * 2, vocab_size)); // affineへの入力にEncoderからのhを追加
+        // rnnからの(b, hidden)とEncoderからの(b, hidden)
+        let affine_w = P1::new(mat_init(hidden_size * 2, vocab_size));
+        let affine_b = P1::new(Arr1d::zeros((vocab_size,)));
+        Self {
+            embed_w,
+            rnn_wx,
+            rnn_wh,
+            rnn_b,
+            affine_w,
+            affine_b,
+        }
+    }
+    pub fn new_for_AttentionDecoder(
+        vocab_size: usize,
+        wordvec_size: usize,
+        hidden_size: usize,
+    ) -> Self {
+        let embed_w = P1::new(randarr2d(vocab_size, wordvec_size) / 100.0);
+        // ランダムベクトル初期化用のクロージャ
+        let mat_init = |m, n| randarr2d(m, n) / (m as f32).sqrt();
+        // rnnへの入力はembedの(b, wordvec)
+        let rnn_wx = P1::new(mat_init(wordvec_size, 4 * hidden_size));
+        let rnn_wh = P1::new(mat_init(hidden_size, 4 * hidden_size));
+        let rnn_b = P1::new(Arr1d::zeros((4 * hidden_size,)));
+        // attentionからの(b, hidden)と、attention前のrnnの(b, hidden)
+        let affine_w = P1::new(mat_init(hidden_size * 2, vocab_size));
         let affine_b = P1::new(Arr1d::zeros((vocab_size,)));
         Self {
             embed_w,
@@ -517,7 +544,7 @@ impl RnnlmGen for RnnlmLSTM<'_> {
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::prelude::thread_rng;
 #[test]
-fn hello_rand() {
+fn rand_test() {
     let choices = ['a', 'b', 'c'];
     let weights = [2, 1, 0];
     let dist = WeightedIndex::new(&weights).unwrap();
