@@ -49,30 +49,6 @@ fn gen_text() {
 }
 
 use itertools::concat;
-/// 16+75  _91  
-/// 52+607 _659
-/// 75+22  _97
-/// という形式の問題ファイルを受け取り、
-/// 問題, 答え, 記号一覧を返す
-use std::collections::HashSet;
-fn load_additon_text(filename: &str) -> (Seq, Seq, Vec<char>, HashMap<char, usize>) {
-    let raw = read_txt(filename).expect(&format!("couldn't load {}", filename));
-    let mut charset = HashSet::new();
-    for _r in raw.iter() {
-        for c in _r.iter() {
-            charset.insert(*c);
-        }
-    }
-    putsd!(charset);
-    let mut charvec: Vec<_> = charset.into_iter().collect();
-    charvec.sort();
-    let char_to_id: HashMap<_, _> = charvec.iter().enumerate().map(|(i, c)| (*c, i)).collect();
-    let xlen = raw[0].iter().position(|c| *c == '_').unwrap();
-    let tlen = raw[0].len() - xlen;
-    let x = Array2::from_shape_fn((raw.len(), xlen), |(i, j)| char_to_id[&raw[i][j]]);
-    let t = Array2::from_shape_fn((raw.len(), tlen), |(i, j)| char_to_id[&raw[i][xlen + j]]);
-    (x, t, charvec, char_to_id)
-}
 fn train_seq2seq() {
     const WORDVEC_SIZE: usize = 16;
     const HIDDEN_SIZE: usize = 128;
@@ -81,7 +57,7 @@ fn train_seq2seq() {
     const MAX_GRAD: f32 = 5.0;
     const LR: f32 = 0.001;
     const REVERSED: bool = true;
-    let (mut x, t, chars, char_to_id) = load_additon_text("./data/addition.txt");
+    let (mut x, t, chars, char_to_id) = load_underscore_separated_text("./data/addition.txt");
     let input_len = x.dim().1;
     if REVERSED {
         // 入力反転

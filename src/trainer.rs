@@ -101,6 +101,7 @@ impl<'a, E: Encode, D: Decode<Dim = E::Dim>> Seq2SeqTrainer<'a, E, D> {
         let mut correct_count = 0.0;
         let start_id = t_test[[0, 0]];
         let sample_size = t_test.dim().1 - 1; // t_testの2つ目以降を予測する
+        let mut wrong_count = 0;
         for (i, (_x, _t)) in x_test
             .axis_chunks_iter(Axis(0), 1)
             .zip(t_test.axis_chunks_iter(Axis(0), 1))
@@ -110,7 +111,9 @@ impl<'a, E: Encode, D: Decode<Dim = E::Dim>> Seq2SeqTrainer<'a, E, D> {
             self.params.iter().inspect(|p| p.reset_grads()); // generateでもgrads保存してしまう仕様なので、全部消す
             let is_correct = _t.iter().zip(guess.iter()).all(|(a, g)| a == g); // answerとguessを比較
             correct_count += if is_correct { 1.0 } else { 0.0 };
-            if i < 10 {
+            // 間違った場合を、最大10個まで出力する
+            if !is_correct && wrong_count < 10 {
+                wrong_count += 1;
                 let mut problem: String = _x.iter().map(|i| chars[*i]).collect();
                 let guess: String = guess.iter().map(|i| chars[*i]).collect();
                 let ans: String = _t.iter().map(|i| chars[*i]).collect();

@@ -409,9 +409,9 @@ impl<'a> TimeLSTM<'a> {
 /// パラメタ持たない。
 pub struct TimeAttention {
     softmax: SoftMaxD<Ix3>,
-    softmax2: SoftMaxD<Ix2>,
     /// swapaxis: (false, false)と、swapaxis: (false, true)
     matmul: [MatMul3D; 2],
+    /// (batch, dec_t, enc_t)
     attention: Arr3d,
 }
 impl TimeAttention {
@@ -431,7 +431,13 @@ impl TimeAttention {
         // (batch, dect, enct)@(batch, enct, hidden; swap) -> (batch, dect, hidden)
         self.matmul[1].forward((attention, enc_hs))
     }
-    pub fn forward_piece(&mut self, enc_hs: Arr3d, dec_h: Arr2d) -> Arr2d {
+    /// generateの際にattentionを保存したい場合は、attention_idx = Some(decoder time　方向のインデックス)とする
+    pub fn forward_piece(
+        &mut self,
+        enc_hs: Arr3d,
+        dec_h: Arr2d,
+        attention_idx: Option<usize>,
+    ) -> Arr2d {
         let (batch_size, enc_t, hidden_size) = enc_hs.dim();
         // const dec_t = 1
         // (batch, hidden) @ (batch, enct, hidden) -> (batch, enct)
@@ -439,8 +445,11 @@ impl TimeAttention {
             dec_h.slice(s![b, ..]).dot(&enc_hs.slice(s![b, e, ..]))
         });
         // いわゆるAttention (SoftMaxに入れることで0~1に正規化される。)
-        out = self.softmax2.forward(out); // ただのsoftmax関数でいいような
-
+        out = softmax(out);
+        // attentionがない場合は事前に作っておく必要がある
+        if self.attention.len() != 0 {
+            attention_idx.map(|i| self.attention.slice_mut(s![0..1, i, ..]).assign(&out));
+        }
         // (batch, enct) @ (batch, enct, hidden) -> (batch, hidden)
         // enc_hsをattentionで重み付けする。
         Arr2d::from_shape_fn((batch_size, hidden_size), |(b, h)| {
@@ -453,5 +462,11 @@ impl TimeAttention {
         let dhs_dec = self.softmax.backward(dattention);
         let (dout, dhs_enc2) = self.matmul[0].backward(dhs_dec);
         (dhs_enc1 + dhs_enc2, dout)
+    }
+    pub fn get_attention(&self) -> Arr2d {
+        self.attention.slice(s![0, .., ..]).to_owned()
+    }
+    pub fn set_attention_box(&mut self, enc_t: usize, dec_t: usize) {
+        self.attention = Arr3d::zeros((1, dec_t, enc_t));
     }
 }
