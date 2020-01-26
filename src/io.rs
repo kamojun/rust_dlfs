@@ -7,8 +7,9 @@ use std::iter::FromIterator;
 // extern crate ndarray;
 use crate::model::rnn::{RnnlmLSTMParams, SavableParams};
 use crate::params::{Param, P1};
-use crate::types::{Arr1d, Arr2d};
+use crate::types::{Arr1d, Arr2d, Seq};
 use ndarray::{Array, Array1, Array2, Axis, Dimension, Ix1, Ix2, RemoveAxis};
+use std::collections::{HashMap, HashSet};
 
 pub trait Save {
     fn save_as_csv(&self, filename: &str) -> Result<(), Box<dyn Error>>;
@@ -90,9 +91,18 @@ impl<T: Load + Default> Load for P1<T> {
         T::load_from_csv(filename).map(P1::new) // まさにgeneric
     }
 }
+/// TODO: file not found errorのときに、どのファイルが見つからなかったか、出力すべき
 impl<SP: SavableParams> Load for SP {
     fn load_from_csv(filename: &str) -> Result<Self, Box<dyn Error>> {
         let (name1, name2) = SP::param_names();
+        putsl!(name1, name2);
+        use std::path::Path;
+        for name in &name1 {
+            putsd!(Path::new(&format!("{}/{}.csv", filename, name)).exists());
+        }
+        for name in &name2 {
+            putsd!(Path::new(&format!("{}/{}.csv", filename, name)).exists());
+        }
         // generic なclosure作れず
         // let load_files = |names: Vec<&str>| {
         //     names
@@ -183,7 +193,6 @@ where
     Ok(v)
 }
 
-#[test]
 fn read_csv_test() {
     // // let v: Vec<Vec<f32>> = read_csv("./data/spiral/x.csv").unwrap();
     // // let arr = Array::from_shape_fn((v.len(), 2), |(i, j)| v[i][j]);
@@ -200,4 +209,30 @@ fn read_csv_test() {
     // )
     // .unwrap();
     // putsd!(arr[[0, 0]]);
+}
+
+/// 例えば
+/// 16+75  _91  
+/// 52+607 _659
+/// 75+22  _97
+/// という形式の問題ファイルを受け取り、
+/// 問題(_の手前まで), 答え(_以降), 記号一覧、記号->idを返す
+pub fn load_underscore_separated_text(
+    filename: &str,
+) -> (Seq, Seq, Vec<char>, HashMap<char, usize>) {
+    let raw = read_txt(filename).expect(&format!("couldn't load {}", filename));
+    let mut charset = HashSet::new();
+    for _r in raw.iter() {
+        for c in _r.iter() {
+            charset.insert(*c);
+        }
+    }
+    let mut charvec: Vec<_> = charset.into_iter().collect();
+    charvec.sort();
+    let char_to_id: HashMap<_, _> = charvec.iter().enumerate().map(|(i, c)| (*c, i)).collect();
+    let xlen = raw[0].iter().position(|c| *c == '_').unwrap();
+    let tlen = raw[0].len() - xlen;
+    let x = Array2::from_shape_fn((raw.len(), xlen), |(i, j)| char_to_id[&raw[i][j]]);
+    let t = Array2::from_shape_fn((raw.len(), tlen), |(i, j)| char_to_id[&raw[i][xlen + j]]);
+    (x, t, charvec, char_to_id)
 }

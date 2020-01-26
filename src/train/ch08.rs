@@ -9,39 +9,16 @@ use ndarray::{array, s, Array2, Axis, Ix2};
 use std::collections::HashMap;
 
 use itertools::concat;
-/// 例えば
-/// 16+75  _91  
-/// 52+607 _659
-/// 75+22  _97
-/// という形式の問題ファイルを受け取り、
-/// 問題(_の手前まで), 答え(_以降), 記号一覧、記号->idを返す
-use std::collections::HashSet;
-fn load_additon_text(filename: &str) -> (Seq, Seq, Vec<char>, HashMap<char, usize>) {
-    let raw = read_txt(filename).expect(&format!("couldn't load {}", filename));
-    let mut charset = HashSet::new();
-    for _r in raw.iter() {
-        for c in _r.iter() {
-            charset.insert(*c);
-        }
-    }
-    let mut charvec: Vec<_> = charset.into_iter().collect();
-    charvec.sort();
-    let char_to_id: HashMap<_, _> = charvec.iter().enumerate().map(|(i, c)| (*c, i)).collect();
-    let xlen = raw[0].iter().position(|c| *c == '_').unwrap();
-    let tlen = raw[0].len() - xlen;
-    let x = Array2::from_shape_fn((raw.len(), xlen), |(i, j)| char_to_id[&raw[i][j]]);
-    let t = Array2::from_shape_fn((raw.len(), tlen), |(i, j)| char_to_id[&raw[i][xlen + j]]);
-    (x, t, charvec, char_to_id)
-}
-fn train_seq2seq() {
+
+fn train_seq2seq_with_dates() {
     const WORDVEC_SIZE: usize = 16;
-    const HIDDEN_SIZE: usize = 256;
+    const HIDDEN_SIZE: usize = 128;
     const BATCH_SIZE: usize = 128;
     const MAX_EPOCH: usize = 5;
     const MAX_GRAD: f32 = 5.0;
     const LR: f32 = 0.001;
-    const REVERSED: bool = true;
-    let (mut x, t, chars, char_to_id) = load_additon_text("./data/date.txt");
+    const REVERSED: bool = false;
+    let (mut x, t, chars, char_to_id) = load_underscore_separated_text("./data/date.txt");
     let input_len = x.dim().1;
     if REVERSED {
         // 入力反転
@@ -63,24 +40,24 @@ fn train_seq2seq() {
     let encoder_time_size = input_len; // encoderの入力は問題文の全体
     let decoder_time_size = t_train.dim().1 - 1; // decoderは右辺の入力から、一つずらしたものを出力するので、入力長は一つ短い
 
-    // let encoder_params = EncoderParams::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
-    // let decoder_params =
-    //     SimpleRnnlmParams::new_for_AttentionDecoder(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
-    // let model = Seq2Seq::<AttentionEncoder, AttentionDecoder>::new(
-    //     encoder_time_size,
-    //     decoder_time_size,
-    //     &encoder_params,
-    //     &decoder_params,
-    // );
     let encoder_params = EncoderParams::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
     let decoder_params =
-        SimpleRnnlmParams::new_for_PeekyDecoder(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
-    let model = Seq2Seq::<Encoder, PeekyDecoder>::new(
+        SimpleRnnlmParams::new_for_AttentionDecoder(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
+    let model = Seq2Seq::<AttentionEncoder, AttentionDecoder>::new(
         encoder_time_size,
         decoder_time_size,
         &encoder_params,
         &decoder_params,
     );
+    // let encoder_params = EncoderParams::new(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
+    // let decoder_params =
+    //     SimpleRnnlmParams::new_for_PeekyDecoder(vocab_size, WORDVEC_SIZE, HIDDEN_SIZE);
+    // let model = Seq2Seq::<Encoder, PeekyDecoder>::new(
+    //     encoder_time_size,
+    //     decoder_time_size,
+    //     &encoder_params,
+    //     &decoder_params,
+    // );
     let optimizer = NewAdam::new(LR, MAX_GRAD);
     let mut trainer = Seq2SeqTrainer::new(
         model,
@@ -98,9 +75,43 @@ fn train_seq2seq() {
     );
     trainer.print_ppl();
     trainer.print_acc();
+    encoder_params
+        .save_as_csv("trained/AttentionEncoder")
+        .expect("error cannot save encoder params");
+    decoder_params
+        .save_as_csv("trained/AttentionDecoder")
+        .expect("error cannot save decoder params");
+}
+fn show_attention() {
+    let (x, t, chars, char_to_id) = load_underscore_separated_text("./data/date.txt");
+    let encoder_time_size = x.dim().1; // encoderの入力は問題文の全体
+    let decoder_time_size = t.dim().1 - 1; // decoderは右辺の入力から、一つずらしたものを出力するので、入力長は一つ短い
+    let encoder_params = EncoderParams::load_from_csv("trained/AttentionEncoder")
+        .expect("cannot load encoder params");
+    let decoder_params = SimpleRnnlmParams::load_from_csv("trained/AttentionDecoder")
+        .expect("cannot load decoder params");
+    let mut model = Seq2Seq::<AttentionEncoder, AttentionDecoder>::new(
+        encoder_time_size,
+        decoder_time_size,
+        &encoder_params,
+        &decoder_params,
+    );
+    let input = "April 25, 1984               ";
+    let inpvec: Vec<_> = String::from(input).chars().collect();
+    let inparr = Array2::from_shape_fn((1, inpvec.len()), |(i, j)| {
+        *char_to_id.get(&inpvec[j]).unwrap()
+    });
+    println!("attention!");
+    let generated = model.generate(inparr, *char_to_id.get(&'_').unwrap(), decoder_time_size);
+    println!(
+        "{}->{}",
+        input,
+        generated.iter().map(|i| chars[*i]).collect::<String>()
+    );
 }
 
 #[test]
 fn test_ch08() {
-    train_seq2seq();
+    train_seq2seq_with_dates();
+    // show_attention();
 }

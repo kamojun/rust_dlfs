@@ -55,10 +55,7 @@ impl RnnlmParams for EncoderParams {
 }
 impl SavableParams for EncoderParams {
     fn param_names() -> (Vec<&'static str>, Vec<&'static str>) {
-        (
-            vec!["rnn_b", "affine_b"],
-            vec!["embed_w", "rnn_wx", "rnn_wh", "affine_w"],
-        )
+        (vec!["rnn_b"], vec!["embed_w", "rnn_wx", "rnn_wh"])
     }
     fn params_to_save(&self) -> Vec<(&Save, &str)> {
         // ここら辺のコードの重複なくしたいな...
@@ -330,6 +327,7 @@ impl<E: Encode<Dim = Dim>, D: Decode<Dim = Dim>, Dim: Dimension> Seq2Seq<E, D> {
         self.decoder.reset_state();
         self.encoder.reset_state();
     }
+    /// idx: 入力文字列, start_id: 開始文字(_)id, sample_size: 2文字目以降の長さ(予測すべき文字列長)
     pub fn generate(
         &mut self,
         idx: Array2<usize>,
@@ -386,7 +384,7 @@ impl Encode for AttentionEncoder<'_> {
 pub struct AttentionDecoder<'a> {
     embed: TimeEmbedding<'a>,
     lstm: TimeLSTM<'a>,
-    attention: TimeAttention,
+    pub attention: TimeAttention,
     affine: TimeAffine<'a>,
 }
 impl<'a> AttentionDecoder<'a> {
@@ -447,11 +445,15 @@ impl Decode for AttentionDecoder<'_> {
         let mut sample_id = start_id;
         self.lstm
             .set_state(Some(enc_hs.slice(s![.., -1, ..]).to_owned()), None);
-        for _ in 0..sample_size {
+        self.attention
+            .set_attention_box(enc_hs.dim().1, sample_size);
+        for i in 0..sample_size {
             let x = Array2::from_elem((batch_size, TIME_SIZE), sample_id);
             let emb = remove_axis(self.embed.forward(x));
             let dec_h = self.lstm.forward_piece(emb);
-            let mut out = self.attention.forward_piece(enc_hs.clone(), dec_h.clone()); // (1, hidden)
+            let mut out = self
+                .attention
+                .forward_piece(enc_hs.clone(), dec_h.clone(), Some(i)); // (1, hidden)
             out = self.affine.forward(stack![Axis(1), out, dec_h]); // (batch, word_num)
             let x: f32 = 0.0;
             let max = out.iter().fold(std::f32::NEG_INFINITY, |m, x| m.max(*x));
@@ -462,6 +464,7 @@ impl Decode for AttentionDecoder<'_> {
             word_ids.push(sample_id);
         }
         self.reset_state(); // 1文作るたびに、reset
+        println!("{}", self.attention.get_attention());
         word_ids
     }
     fn reset_state(&mut self) {
